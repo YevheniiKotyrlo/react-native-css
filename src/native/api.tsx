@@ -20,6 +20,7 @@ import {
   type Effect,
   type Getter,
 } from "./reactivity";
+import { parseVariableValue } from "./styles/parse-value";
 import { resolveValue } from "./styles/resolve";
 
 export {
@@ -112,13 +113,21 @@ export function useNativeVariable(name: string) {
 }
 
 /**
+ * The other JavaScript channel into the variable system, and the same contract:
+ * a value may be a `StyleDescriptor` or the CSS source text of the same
+ * declaration, and `parseVariableValue` reads the second into the first at the
+ * point it is stored.
+ *
  * @deprecated Use `<VariableContextProvider />` instead.
  */
 export function vars(variables: Record<string, StyleDescriptor>) {
   return Object.assign(
     { [VAR_SYMBOL]: "inline" },
     Object.fromEntries(
-      Object.entries(variables).map(([k, v]) => [k.replace(/^--/, ""), v]),
+      Object.entries(variables).map(([name, descriptor]) => [
+        name.replace(/^--/, ""),
+        parseVariableValue(descriptor),
+      ]),
     ),
   );
 }

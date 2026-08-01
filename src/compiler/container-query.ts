@@ -14,12 +14,13 @@ import type { StylesheetBuilder } from "./stylesheet";
 export function parseContainerCondition(
   condition: CSSContainerCondition,
   builder: StylesheetBuilder,
-) {
-  let containerQuery = parseContainerQueryCondition(condition, builder);
+): MediaCondition {
+  const containerQuery = parseContainerQueryCondition(condition, builder);
 
-  // If any of these are undefined, the media query is invalid
-  if (!containerQuery || containerQuery.some((v) => v === undefined)) {
-    return;
+  // An unrepresentable condition becomes UNREPRESENTABLE, never absent —
+  // returning nothing here left the rule matching under ANY container.
+  if (!containerQuery || containerQuery.some((value) => value === undefined)) {
+    return ["?"];
   }
 
   return containerQuery;
@@ -34,11 +35,14 @@ function parseContainerQueryCondition(
       return parseFeature(condition.value, builder);
     case "not":
       const query = parseContainerCondition(condition.value, builder);
-      return query ? ["!", query] : undefined;
+      return ["!", query ?? ["?"]];
     case "operation":
-      const conditions = condition.conditions
-        .map((c) => parseContainerQueryCondition(c, builder))
-        .filter((v): v is MediaCondition => !!v);
+      // An unrepresentable child is KEPT rather than filtered out — dropping it
+      // rewrote the query into one that matches strictly more often.
+      const conditions = condition.conditions.map(
+        (child): MediaCondition =>
+          parseContainerQueryCondition(child, builder) ?? ["?"],
+      );
 
       if (conditions.length === 0) {
         return;
@@ -54,11 +58,13 @@ function parseContainerQueryCondition(
           return;
       }
     case "style":
-      // We don't support these yet
-      return;
+      // `@container style(--x: 1)` needs the declaring container's computed
+      // value, which this runtime does not track. Unrepresentable, so the rule
+      // never applies — it used to apply under every container.
+      return ["?"];
     default:
       condition satisfies never;
-      return;
+      return ["?"];
   }
 }
 

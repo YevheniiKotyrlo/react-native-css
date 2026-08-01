@@ -1,0 +1,17 @@
+// The tsconfig the PUBLISHED build reads, and the only thing it changes is what
+// is in scope: `src/__tests__` is out.
+//
+// `tsconfig.json` deliberately keeps it in, because `tsc --noEmit` has to check
+// it. The declaration build has the opposite requirement — a `.d.ts` emitted
+// for a test lands in the consumer's `node_modules` and references `jest` and
+// `@testing-library/react-native`, which a consumer has no reason to have
+// installed. The babel targets already skip the directory; only `tsc` reads a
+// tsconfig, so only `tsc` needed telling.
+//
+// The colocated `src/compiler/inheritance.test.ts` is deliberately NOT excluded.
+// Its declaration is part of the published 3.0.7 package, and dropping it here
+// would be a second, unrelated change wearing this one's clothes.
+{
+  "extends": "./tsconfig.json",
+  "exclude": ["node_modules", "dist", "src/__tests__"]
+}

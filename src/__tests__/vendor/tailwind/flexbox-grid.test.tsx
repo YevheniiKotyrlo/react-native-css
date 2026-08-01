@@ -3,8 +3,7 @@ import { renderCurrentTest } from "./_tailwind";
 describe("Flexbox & Grid - Flex Basis", () => {
   test("basis-auto", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { values: { "flex-basis": "auto" } },
+      props: { style: { flexBasis: "auto" } },
     });
   });
   test("basis-0", async () => {
@@ -88,20 +87,17 @@ describe("Flexbox & Grid - Flex", () => {
   });
   test("flex-auto", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { flexGrow: 1, flexShrink: 1 } },
-      warnings: { values: { flex: "auto" } },
+      props: { style: { flexBasis: "auto", flexGrow: 1, flexShrink: 1 } },
     });
   });
   test("flex-initial", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { flexGrow: 0, flexShrink: 1 } },
-      warnings: { values: { flex: "auto" } },
+      props: { style: { flexBasis: "auto", flexGrow: 0, flexShrink: 1 } },
     });
   });
   test("flex-none", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { flexGrow: 0, flexShrink: 0 } },
-      warnings: { values: { flex: "auto" } },
+      props: { style: { flexBasis: "auto", flexGrow: 0, flexShrink: 0 } },
     });
   });
 });
@@ -613,25 +609,23 @@ describe("Flexbox & Grid - Place Items", () => {
   test("place-items-start", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {},
-      warnings: { properties: ["place-items"] },
+      warnings: { values: { "place-items": "start" } },
     });
   });
   test("place-items-end", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {},
-      warnings: { properties: ["place-items"] },
+      warnings: { values: { "place-items": "end" } },
     });
   });
   test("place-items-center", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["place-items"] },
+      props: { style: { alignItems: "center" } },
     });
   });
   test("place-items-stretch", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["place-items"] },
+      props: { style: { alignItems: "stretch" } },
     });
   });
 });
@@ -639,32 +633,29 @@ describe("Flexbox & Grid - Place Items", () => {
 describe("Flexbox & Grid - Place Self", () => {
   test("place-self-auto", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["place-self"] },
+      props: { style: { alignSelf: "auto" } },
     });
   });
   test("place-self-start", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {},
-      warnings: { properties: ["place-self"] },
+      warnings: { values: { "place-self": "start" } },
     });
   });
   test("place-self-end", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {},
-      warnings: { properties: ["place-self"] },
+      warnings: { values: { "place-self": "end" } },
     });
   });
   test("place-self-center", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["place-self"] },
+      props: { style: { alignSelf: "center" } },
     });
   });
   test("place-self-stretch", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["place-self"] },
+      props: { style: { alignSelf: "stretch" } },
     });
   });
 });

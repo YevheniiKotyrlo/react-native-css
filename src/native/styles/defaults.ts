@@ -14,7 +14,15 @@ export const transformKeys = new Set([
   "skewY",
   "perspective",
   "matrix",
-  "transformOrigin",
+  // `transformOrigin` is deliberately NOT here. Every other member is a
+  // transform FUNCTION that composes into React Native's `transform` array;
+  // `transformOrigin` is a style key of its own. Membership routed it through
+  // `applyValue`'s transform branch (`native/objects.ts`), so a deferred value
+  // was appended to the array as a bare entry — `transform: scale(2);
+  // transform-origin: 1em 2em` produced
+  // `transform: [{scaleX:2},{scaleY:2},14,28]`. Static values never took that
+  // path, so the corruption only appeared once a value had to be resolved at
+  // runtime (em/vw units, or a `var()`).
 ]);
 
 export const defaultValues: Record<string, any> = {

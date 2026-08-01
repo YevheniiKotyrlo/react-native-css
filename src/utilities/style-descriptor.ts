@@ -22,3 +22,30 @@ export function isStyleFunction(
 
   return false;
 }
+
+/**
+ * Whether a value holds a style function anywhere inside it, rather than BEING
+ * one.
+ *
+ * The distinction decides whether a declaration can be settled at compile time.
+ * `filter` and `transform` are always a LIST of functions — a single one is
+ * wrapped so the shape is uniform — so `isStyleFunction` answers `false` for
+ * exactly the two properties whose value is nothing but functions, and asking
+ * it there sent them down the static path: `rule.dv` went unset, the value
+ * resolved before the element's variables were in scope, and `filter: var(--f)`
+ * rendered nothing.
+ *
+ * The recursion stops at the first function found. Deciding what to DO about
+ * one — whether to delay, and whether variables are involved — is
+ * `postProcessStyleFunction`'s full walk.
+ */
+export function containsStyleFunction(value: StyleDescriptor): boolean {
+  if (isStyleFunction(value)) {
+    return true;
+  }
+
+  return (
+    isStyleDescriptorArray(value) &&
+    value.some((entry) => containsStyleFunction(entry))
+  );
+}
