@@ -6,7 +6,7 @@ import type {
 } from "lightningcss";
 
 import type { StyleRuleMapping } from "./compiler.types";
-import { toRNProperty } from "./selectors";
+import { toRNProperty } from "./selector-builder";
 import { splitByDelimiter } from "./split-by-delimiter";
 import type { StylesheetBuilder } from "./stylesheet";
 

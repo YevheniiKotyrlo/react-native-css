@@ -1,5 +1,6 @@
 import { memo, useEffect } from "react";
 import type { ViewProps } from "react-native";
+import { processColor } from "react-native";
 
 import { render, screen } from "@testing-library/react-native";
 import { styled, VariableContextProvider } from "react-native-css";
@@ -171,9 +172,21 @@ test("can apply and set new variables", () => {
   expect(screen.getByTestId(testIDs.two).props.style).toStrictEqual({
     color: "#f00",
   });
+  // `--another-var` is declared on `.my-class` and read from `.another-class`,
+  // which is inheritance: the reading element does not carry the declaring
+  // rule, so only an ancestor can supply the value and only the runtime knows
+  // whether one did. It therefore arrives as the author wrote it, rather than
+  // in lightningcss's normalised spelling — which is what the compile-time fold
+  // produces, and `:root { --my-var: red }` above still folds and still reads
+  // `#f00`.
+  //
+  // The two spellings are one colour to React Native, which is what makes this
+  // a difference in spelling rather than in what renders. A runtime-supplied
+  // variable behaves the same way (see the `VariableContextProvider` test).
   expect(screen.getByTestId(testIDs.three).props.style).toStrictEqual({
-    color: "#008000",
+    color: "green",
   });
+  expect(processColor("green")).toBe(processColor("#008000"));
 });
 
 test("variables will be inherited", () => {
@@ -198,8 +211,10 @@ test("variables will be inherited", () => {
     </View>,
   );
 
+  // Two levels up, and past a sibling declaration — so `--var-2` can only come
+  // from the VariableContext, and reaches the element in its authored spelling.
   expect(screen.getByTestId(testIDs.three).props.style).toStrictEqual({
-    color: "#008000",
+    color: "green",
   });
 });
 
@@ -269,5 +284,8 @@ test("variable overriding with classes", () => {
   );
 
   const component = screen.getByTestId(testID);
-  expect(component.props.style).toStrictEqual({ color: "#f00" });
+  // `--tier-500` is declared on `.tier-red` and read from `.test`, so it
+  // travels through the VariableContext. The `:root` tier it points at folds
+  // at compile time and `red` is what that fold left in it.
+  expect(component.props.style).toStrictEqual({ color: "red" });
 });

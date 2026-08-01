@@ -375,14 +375,12 @@ describe("Layout - Clear", () => {
 describe("Layout - Isolation", () => {
   test("isolate", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["isolation"] },
+      props: { style: { isolation: "isolate" } },
     });
   });
   test("isolation-auto", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["isolation"] },
+      props: { style: { isolation: "auto" } },
     });
   });
 });
@@ -392,7 +390,7 @@ describe("Layout - Object Fit", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         contentFit: "contain",
-        style: {},
+        style: { objectFit: "contain" },
       },
     });
   });
@@ -400,7 +398,7 @@ describe("Layout - Object Fit", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         contentFit: "cover",
-        style: {},
+        style: { objectFit: "cover" },
       },
     });
   });
@@ -408,7 +406,7 @@ describe("Layout - Object Fit", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         contentFit: "fill",
-        style: {},
+        style: { objectFit: "fill" },
       },
     });
   });
@@ -416,7 +414,7 @@ describe("Layout - Object Fit", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         contentFit: "none",
-        style: {},
+        style: { objectFit: "none" },
       },
     });
   });
@@ -424,7 +422,7 @@ describe("Layout - Object Fit", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         contentFit: "scale-down",
-        style: {},
+        style: { objectFit: "scale-down" },
       },
     });
   });
@@ -519,9 +517,10 @@ describe("Layout - Overflow", () => {
     });
   });
   test("overflow-scroll", async () => {
+    // `scroll` is an exact match for React Native's own `FlexStyle["overflow"]`
+    // union, so refusing it turned away a value React Native renders.
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { values: { overflow: "scroll" } },
+      props: { style: { overflow: "scroll" } },
     });
   });
   test("overflow-x-auto", async () => {
@@ -849,12 +848,16 @@ describe("Layout - Top Right Bottom Left", () => {
 describe("Layout - Visibility", () => {
   test("visible", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { opacity: 1 } },
+      props: {
+        style: { visibility: "visible", opacity: 1, pointerEvents: "auto" },
+      },
     });
   });
   test("invisible", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { opacity: 0 } },
+      props: {
+        style: { visibility: "hidden", opacity: 0, pointerEvents: "none" },
+      },
     });
   });
 });

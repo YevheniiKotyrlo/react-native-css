@@ -9,12 +9,19 @@ import tBabelTypes, {
 } from "@babel/types";
 
 import { allowedModules } from "./allowedModules";
+import { toPosixPath } from "./helpers";
 
 type BabelTypes = typeof tBabelTypes;
 
 function parseReactNativeSource(source: string, filename: string) {
   if (source.startsWith(".")) {
-    source = resolve(dirname(filename), source);
+    // POSIX separators, because the marker below is written with them and
+    // `resolve` answers in the HOST's. On Windows it returns
+    // `C:\…\react-native\Libraries\Components\View\View`, which contains no
+    // occurrence of the forward-slash marker — so the split found nothing, the
+    // import was left alone, and every relative React Native import in a
+    // Windows build silently skipped the plugin.
+    source = toPosixPath(resolve(dirname(filename), source));
 
     const internalPath = source.split("react-native/Libraries/Components/")[1];
     if (!internalPath) {

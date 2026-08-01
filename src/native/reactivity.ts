@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { createContext } from "react";
 import {
+  AccessibilityInfo,
   Appearance,
   Dimensions,
   type ColorSchemeName,
@@ -221,6 +222,115 @@ export const colorScheme = observable<ColorSchemeName>(
 );
 Appearance.addChangeListener((event) => colorScheme.set(event.colorScheme));
 
+/** Accessibility preferences *************************************************/
+
+/**
+ * An `AccessibilityInfo` flag as an observable, seeded from its getter and kept
+ * current by its change event — the same shape `colorScheme` uses one line up,
+ * so a style recomputes in place when the user changes the setting.
+ *
+ * The getters are asynchronous, so the flag reads `false` for the first frame
+ * and settles immediately after. That is the same answer the platform gives
+ * when it cannot detect the preference at all (each of these events is
+ * single-platform), and it is the answer a browser gives on an OS without the
+ * setting: the media feature reports its "no preference" value rather than
+ * refusing to answer.
+ */
+function accessibilityFlag(
+  read: () => Promise<boolean>,
+  event:
+    | "invertColorsChanged"
+    | "reduceMotionChanged"
+    | "reduceTransparencyChanged"
+    | "highTextContrastChanged",
+): Observable<boolean> {
+  const flag = observable(false);
+
+  // "Not detectable" arrives by two routes, and both mean the same thing.
+  //
+  // React Native REJECTS these getters — with `null` — when the platform has no
+  // such native module: `isInvertColorsEnabled` on an Android build without the
+  // method, `isReduceTransparencyEnabled` wherever `NativeAccessibilityManagerIOS`
+  // is absent, which is every out-of-tree platform. Without the catch, importing
+  // this module prints "Possible Unhandled Promise Rejection" at every app start,
+  // whether or not the app uses these media features.
+  //
+  // It can also be ABSENT — a stub `AccessibilityInfo` under a bare test runner,
+  // or a build predating the getter. Then the call throws SYNCHRONOUSLY, before
+  // there is a promise to reject, and an uncaught throw at module scope takes
+  // the whole module down at import: every media feature stops working, not
+  // just this one. So the invocation is guarded rather than only its promise.
+  //
+  // Either way the preference is not detectable, which is the `false` seed
+  // already in place.
+  try {
+    read()
+      .then((enabled) => flag.set(enabled))
+      .catch(() => undefined);
+  } catch {
+    // Not detectable on this platform; the seed stands.
+  }
+
+  try {
+    AccessibilityInfo.addEventListener(event, (enabled) => flag.set(enabled));
+  } catch {
+    // No event to subscribe to, so the flag stays at whatever the read gave.
+  }
+
+  return flag;
+}
+
+/** iOS "Invert Colors". Backs `@media (inverted-colors)`. */
+export const invertedColors = accessibilityFlag(
+  () => AccessibilityInfo.isInvertColorsEnabled(),
+  "invertColorsChanged",
+);
+
+/**
+ * The OS reduce-motion preference. Backs `@media (prefers-reduced-motion)`, and
+ * therefore every `motion-reduce:` / `motion-safe:` utility.
+ *
+ * It is an observable rather than a boot-time read because the preference is
+ * changed while the app is running — the user goes to Settings to turn it on,
+ * comes back, and expects the animations to stop. A snapshot taken at import
+ * would leave them running until the next cold start.
+ */
+export const reduceMotion = accessibilityFlag(
+  () => AccessibilityInfo.isReduceMotionEnabled(),
+  "reduceMotionChanged",
+);
+
+/** iOS "Reduce Transparency". Backs `@media (prefers-reduced-transparency)`. */
+export const reducedTransparency = accessibilityFlag(
+  () => AccessibilityInfo.isReduceTransparencyEnabled(),
+  "reduceTransparencyChanged",
+);
+
+/** Android "High contrast text". Backs `@media (prefers-contrast)`. */
+export const highContrast = accessibilityFlag(
+  () => AccessibilityInfo.isHighTextContrastEnabled(),
+  "highTextContrastChanged",
+);
+
+/** Text ancestry *************************************************************/
+
+/**
+ * Whether a text-rendering component encloses this subtree.
+ *
+ * Used to decide whether CSS inherited text properties should be applied: a
+ * `<Text>` nested inside another `<Text>` is left alone, because React Native
+ * already inherits Text → Text natively — and does it better, since that path
+ * carries `style`-prop values which never appear as CSS variables.
+ *
+ * This library publishes its own signal rather than reading React Native's
+ * `unstable_TextAncestorContext`. That context is not provided in every
+ * environment (under the `jest-expo` preset a descendant of a real `<Text>`
+ * reads `false`), so depending on it would make the guard silently inert
+ * exactly where it is load-bearing. Every `<Text>` in an app already renders
+ * through this library's own component, so this signal is always present.
+ */
+export const TextAncestorContext = createContext(false);
+
 /** Containers ****************************************************************/
 
 export type ContainerContextValue = Record<string, WeakKey>;
@@ -243,6 +353,12 @@ export const containerWidthFamily = weakFamily((key) => {
 
 export const containerHeightFamily = weakFamily((key) => {
   return observable((read) => {
-    return read(containerLayoutFamily(key))?.width || 0;
+    // `.height`. Reading `.width` here made every height-based container query
+    // answer with the width: `@container (min-height: 400px)` matched a 500x100
+    // container and missed a 100x500 one, and `aspect-ratio` and `orientation`
+    // — both computed from this pair — were wrong for any non-square container.
+    // Every existing container test uses a square layout, which is why nothing
+    // caught it.
+    return read(containerLayoutFamily(key))?.height || 0;
   });
 });

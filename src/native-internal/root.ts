@@ -29,16 +29,95 @@ const rootVariableFamily = () => {
   });
 };
 
-export const rootVariables = rootVariableFamily();
-export const universalVariables = rootVariableFamily();
+/**
+ * The `:root` registries are process-global and seeded EXACTLY ONCE.
+ *
+ * A bundle can hold two copies of this library — `dist/module` for ESM
+ * importers and `dist/commonjs` for CommonJS ones — because the package
+ * `exports` map splits on the import/require condition and Metro resolves that
+ * per REQUESTING module. Compiled-CJS consumers bind the commonjs build while
+ * first-party source binds the module build, and the stylesheet is injected
+ * into only one of them. Give each copy its own registry and the other resolves
+ * every `var(--…)` to undefined: a `className` colour silently falls back to
+ * React Native's default black. `style-collection.ts` and `variables.ts` guard
+ * the same way, for the same reason.
+ *
+ * The seeds live INSIDE the guard rather than beside it. `__rn-css-rem` is also
+ * set by the injected stylesheet, so a second copy initialising afterwards would
+ * re-run the seed and clobber the stylesheet's value back to 14 — silently
+ * rescaling every rem-based utility. Creating and seeding have to be one atomic
+ * once-only step.
+ */
+type RootVariableRegistry = ReturnType<typeof rootVariableFamily>;
 
-rootVariables("__rn-css-rem").set([[14]]);
-// eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-rootVariables("__rn-css-color").set([
-  [
-    Platform.OS === "ios"
-      ? PlatformColor("label", "labelColor")
-      : PlatformColor("?attr/textColorPrimary", "SystemBaseHighColor"),
-  ],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-] as any);
+interface RootVariableGlobals {
+  __react_native_css_root_variables?: RootVariableRegistry;
+  __react_native_css_universal_variables?: RootVariableRegistry;
+}
+
+// The registries hang off the global object precisely because a second copy of
+// this module has no other way to find the first one's. `globalThis` is typed
+// with no index signature, so naming the two slots takes a bridge; it is one
+// cast at the boundary rather than a widened type every consumer inherits.
+const registryHost = globalThis as unknown as RootVariableGlobals;
+
+/**
+ * The pair, created and seeded on first import and reused by every copy after.
+ *
+ * Returning them rather than reading the globals back is what keeps the exports
+ * non-optional: the registries exist by the time this returns, whichever branch
+ * ran.
+ */
+function resolveRootRegistries(): {
+  root: RootVariableRegistry;
+  universal: RootVariableRegistry;
+} {
+  const existingRoot = registryHost.__react_native_css_root_variables;
+  const existingUniversal = registryHost.__react_native_css_universal_variables;
+
+  if (existingRoot !== undefined && existingUniversal !== undefined) {
+    return { root: existingRoot, universal: existingUniversal };
+  }
+
+  const root = rootVariableFamily();
+  const universal = rootVariableFamily();
+
+  root("__rn-css-rem").set([[14]]);
+
+  // `__rn-css-color` is the root default behind every `currentcolor`
+  // resolution. On Android, `PlatformColor("?attr/textColorPrimary")` resolves
+  // to a ColorStateList, which `ColorPropConverter` returns unchecked as though
+  // it were an ARGB int — so it never reaches paint as a usable colour, and
+  // `ring` / `inset-ring` render nothing while `text-current` is invisible. A
+  // concrete colour is seeded instead, made scheme-aware through this same
+  // observable's `prefers-color-scheme` evaluation rather than a second
+  // Appearance listener. iOS resolves `PlatformColor` correctly and keeps it.
+  if (Platform.OS === "ios") {
+    // `PlatformColor` returns an `OpaqueColorValue` — a branded symbol React
+    // Native accepts anywhere a colour is taken, and which `StyleDescriptor`
+    // does not model. The bridge is isolated to this one seed rather than
+    // widening the descriptor for every consumer of it.
+    const platformLabelColour = [
+      [PlatformColor("label", "labelColor")],
+    ] as unknown as VariableValue[];
+
+    root("__rn-css-color").set(platformLabelColour);
+  } else {
+    root("__rn-css-color").set([
+      ["#FFFFFF", [["=", "prefers-color-scheme", "dark"]]],
+      ["#000000"],
+    ]);
+  }
+
+  // Published only once both are built and seeded, so a second copy can never
+  // observe a half-initialised registry.
+  registryHost.__react_native_css_root_variables = root;
+  registryHost.__react_native_css_universal_variables = universal;
+
+  return { root, universal };
+}
+
+const rootRegistries = resolveRootRegistries();
+
+export const rootVariables = rootRegistries.root;
+export const universalVariables = rootRegistries.universal;

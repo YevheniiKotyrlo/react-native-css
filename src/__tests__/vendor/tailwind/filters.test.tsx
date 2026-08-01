@@ -56,28 +56,31 @@ describe("Filters - Contrast", () => {
 
 describe("Filters - Drop Shadow", () => {
   test("drop-shadow", async () => {
+    // FLAT. `ViewStyle.filter` is a list of single-key objects, and
+    // `processFilter` reads each entry's key with `Object.entries(entry)[0]`.
+    // A nested entry has no key it knows, and its answer to ONE unreadable
+    // entry is `return []` — so a nested list loses every filter in the
+    // declaration, not just the nested one.
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         style: {
           filter: [
-            [
-              {
-                dropShadow: {
-                  standardDeviation: 2,
-                  color: "#0000001a",
-                  offsetX: 0,
-                  offsetY: 1,
-                },
+            {
+              dropShadow: {
+                standardDeviation: 2,
+                color: "#0000001a",
+                offsetX: 0,
+                offsetY: 1,
               },
-              {
-                dropShadow: {
-                  standardDeviation: 1,
-                  color: "#0000000f",
-                  offsetX: 0,
-                  offsetY: 1,
-                },
+            },
+            {
+              dropShadow: {
+                standardDeviation: 1,
+                color: "#0000000f",
+                offsetX: 0,
+                offsetY: 1,
               },
-            ],
+            },
           ],
         },
       },

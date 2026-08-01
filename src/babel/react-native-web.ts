@@ -9,12 +9,16 @@ import tBabelTypes, {
 } from "@babel/types";
 
 import { allowedModules } from "./allowedModules";
+import { toPosixPath } from "./helpers";
 
 type BabelTypes = typeof tBabelTypes;
 
 function parseReactNativeWebSource(source: string, filename: string) {
   if (source.startsWith(".")) {
-    source = resolve(filename, source);
+    // POSIX separators — see `toPosixPath`. `resolve` answers in the host's
+    // separator, so on Windows this path contains no forward-slash marker to
+    // split on and every relative import was left unrewritten.
+    source = toPosixPath(resolve(filename, source));
 
     const internalPath = source.split("react-native-web/dist")[1];
     if (!internalPath) {

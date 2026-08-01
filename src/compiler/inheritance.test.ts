@@ -23,7 +23,12 @@ test("nested classes", () => {
           {
             cq: [{ n: "g:my-class" }],
             d: [{ color: "#f00" }],
-            v: [["__rn-css-color", "#f00"]],
+            v: [
+              // `color` is an inherited CSS property, so it is published to
+              // the subtree alongside the currentcolor variable.
+              ["__rn-css-inherit-color", "#f00"],
+              ["__rn-css-color", "#f00"],
+            ],
             s: [1, 2],
           },
         ],
@@ -64,7 +69,12 @@ test("multiple tiers classes", () => {
           {
             cq: [{ n: "g:one" }, { n: "g:two" }],
             d: [{ color: "#f00" }],
-            v: [["__rn-css-color", "#f00"]],
+            v: [
+              // `color` is an inherited CSS property, so it is published to
+              // the subtree alongside the currentcolor variable.
+              ["__rn-css-inherit-color", "#f00"],
+              ["__rn-css-color", "#f00"],
+            ],
             s: [1, 3],
           },
         ],
@@ -96,7 +106,7 @@ test("tiers with multiple classes", () => {
           {
             c: ["g:three.two"],
             s: [0],
-            aq: [["a", "className", "*=", "two"]],
+            aq: [["a", "className", "~=", "two"]],
           },
         ],
       ],
@@ -111,7 +121,12 @@ test("tiers with multiple classes", () => {
               },
             ],
             d: [{ color: "#f00" }],
-            v: [["__rn-css-color", "#f00"]],
+            v: [
+              // `color` is an inherited CSS property, so it is published to
+              // the subtree alongside the currentcolor variable.
+              ["__rn-css-inherit-color", "#f00"],
+              ["__rn-css-color", "#f00"],
+            ],
             s: [1, 4],
           },
         ],

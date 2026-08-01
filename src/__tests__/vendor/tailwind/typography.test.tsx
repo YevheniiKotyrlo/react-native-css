@@ -65,9 +65,13 @@ describe("Typography - Font Weight", () => {
 
 describe("Typography - Font Variant Numeric", () => {
   test("normal-nums", async () => {
+    // `font-variant-numeric: normal` is the only value of this utility group
+    // Tailwind writes as a plain keyword rather than through its `--tw-*`
+    // variables, so it is the only one the compiler can evaluate. It means "no
+    // numeric variants", which React Native spells as the empty list — that is
+    // what cancels a variant inherited from an ancestor.
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { properties: ["font-variant-numeric"] },
+      props: { style: { fontVariant: [] } },
     });
   });
   test("ordinal", async () => {
@@ -322,9 +326,11 @@ describe("Typography - Text Color", () => {
     });
   });
   test("text-inherit", async () => {
+    // `color: inherit` resolves through `__rn-css-color`, the variable every
+    // colour rule publishes for its subtree — the same one `currentcolor`
+    // reads. With no ancestor colour it lands on the root seed.
     expect(await renderCurrentTest()).toStrictEqual({
-      props: {},
-      warnings: { values: { color: "inherit" } },
+      props: { style: { color: { semantic: ["label", "labelColor"] } } },
     });
   });
 });

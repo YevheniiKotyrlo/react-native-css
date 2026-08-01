@@ -176,6 +176,16 @@ export type AnimationKeyframes = [string | number, StyleDeclaration[]];
 export type MediaCondition =
   // Boolean
   | ["!!", MediaFeatureNameFor_MediaFeatureId]
+  /**
+   * Unrepresentable — a condition this compiler could not translate.
+   *
+   * It evaluates to UNKNOWN, so the rule it guards never applies, in either
+   * polarity. That is what CSS asks for (MQ4 §3.1) and it is the only safe
+   * answer: dropping the condition and keeping the rule, which is what a
+   * missing condition used to mean, does not make the styles go missing — it
+   * makes them go EVERYWHERE.
+   */
+  | ["?"]
   // Not
   | ["!", MediaCondition]
   // And
@@ -217,7 +227,19 @@ export type AttributeQuery =
   | [AttributeQueryType, string] // Exists
   | [AttributeQueryType, string, "!"] // Falsy
   | [AttributeQueryType, string, AttrSelectorOperator, string] // Use operator
-  | [AttributeQueryType, string, AttrSelectorOperator, string, "i" | "s"]; // Case sensitivity
+  | [AttributeQueryType, string, AttrSelectorOperator, string, "i" | "s"] // Case sensitivity
+  /**
+   * Negation and conjunction, spelled as `MediaCondition` spells them, because
+   * they are the same three-operator grammar over a different question.
+   *
+   * `:not()` needs both, not just `!`: a list argument (`:not(.a, .b)`) is
+   * `not(a) and not(b)`, which the surrounding query list already ANDs, but a
+   * COMPOUND argument (`:not(.a.b)`) is `not(a and b)` — a different, weaker
+   * selector that only excludes the element carrying both. Flattening it into
+   * two negations would silently tighten the rule.
+   */
+  | ["!", AttributeQuery] // Negation
+  | ["&", AttributeQuery[]]; // Conjunction
 
 export type AttrSelectorOperator = "=" | "~=" | "|=" | "^=" | "$=" | "*=";
 

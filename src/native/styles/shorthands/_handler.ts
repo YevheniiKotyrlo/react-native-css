@@ -1,13 +1,12 @@
 /* eslint-disable */
-import {
-  isStyleDescriptorArray,
-  isStyleFunction,
-} from "react-native-css/utilities";
+import type { StyleDescriptor } from "react-native-css/compiler";
+import { isStyleFunction } from "react-native-css/utilities";
 
 import { setDeepPath } from "../../objects";
 import { ShortHandSymbol } from "../constants";
 import { defaultValues } from "../defaults";
 import type { StyleResolver } from "../resolve";
+import { resolveShorthandArguments } from "./_expand";
 
 type ShorthandType =
   | "string"
@@ -16,14 +15,28 @@ type ShorthandType =
   | "color"
   | Readonly<(string | Function)[]>;
 
+/**
+ * The React Native key a matched component is written to, or `undefined` for a
+ * component CSS defines and React Native has no key for — `border-top`'s style,
+ * which React Native carries only as the whole-box `borderStyle`. The component
+ * still has to be in the mapping, because it occupies a position the values are
+ * matched against; it simply writes nothing.
+ */
+type ShorthandTarget = string | readonly string[] | undefined;
+
 type ShorthandRequiredValue =
-  | readonly [string | readonly string[], ShorthandType]
+  | readonly [ShorthandTarget, ShorthandType]
   | ShorthandDefaultValue;
 
+/**
+ * A component with a value for when the declaration omits it — either the NAME
+ * of an entry in `defaultValues`, or the value itself. `currentcolor` is written
+ * as the descriptor it is, because it names a variable rather than a colour.
+ */
 type ShorthandDefaultValue = readonly [
-  string | readonly string[],
+  ShorthandTarget,
   ShorthandType,
-  any,
+  StyleDescriptor,
 ];
 
 export function shorthandHandler(
@@ -32,19 +45,15 @@ export function shorthandHandler(
   returnType: "shorthandObject" | "tuples" | "object" = "shorthandObject",
 ): StyleResolver {
   return (resolve, value, __, { castToArray }) => {
-    let args = isStyleDescriptorArray(value)
-      ? resolve(value)
-      : Array.isArray(value)
-        ? resolve(value[2])
-        : value;
+    // A shorthand given ONE value is a complete declaration — `border: solid`
+    // names a line style and takes CSS's initial width and colour — and a
+    // variable holding one token resolves to that token rather than to a list
+    // of one. Read through the same reader as the repeat shorthands
+    // (`./_expand.ts`), which makes a one-value list of it, so the one-value
+    // rows in the mapping tables below are reachable at all.
+    const args = resolveShorthandArguments(resolve, value);
 
-    if (!Array.isArray(args)) {
-      return;
-    }
-
-    args = args.flat();
-
-    if (!Array.isArray(args)) {
+    if (args === undefined) {
       return;
     }
 
@@ -56,7 +65,9 @@ export function shorthandHandler(
           const value = args[index];
 
           if (Array.isArray(type)) {
-            return type.includes(value) || type.includes(typeof value);
+            return type.some(
+              (member) => member === value || member === typeof value,
+            );
           }
 
           // Style functions (var, calc, env, etc.) are unresolved at pattern-match
@@ -65,7 +76,7 @@ export function shorthandHandler(
           // less strict when variables are involved, but rejecting them would
           // break variable-based shadows entirely (e.g. box-shadow: var(--shadow)
           // where --shadow resolves to "0 4px 6px -1px #000").
-          if (isStyleFunction(value)) {
+          if (Array.isArray(value) && isStyleFunction(value)) {
             return true;
           }
 
@@ -105,7 +116,14 @@ export function shorthandHandler(
       }),
       ...Array.from(seenDefaults).map(
         (map): [unknown, ShorthandRequiredValue[0]] => {
-          let value = defaultValues[map[2]] ?? map[2];
+          // A default is written either as the NAME of an entry in
+          // `defaultValues` or as the value itself, and the value itself may be
+          // a descriptor rather than a literal — `currentcolor` is a read of the
+          // element's own colour, so it is only a colour once it is resolved.
+          let value: unknown = resolve(
+            typeof map[2] === "string" ? (defaultValues[map[2]] ?? map[2]) : map[2],
+          );
+
           if (castToArray && value && !Array.isArray(value)) {
             value = [value];
           }
@@ -120,7 +138,9 @@ export function shorthandHandler(
         returnType === "shorthandObject" ? { [ShortHandSymbol]: true } : {};
 
       for (const [value, prop] of tuples) {
-        if (typeof prop === "string") {
+        if (prop === undefined) {
+          continue;
+        } else if (typeof prop === "string") {
           target[prop] = value;
         } else {
           setDeepPath(target, prop, value);

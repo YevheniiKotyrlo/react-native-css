@@ -10,11 +10,14 @@ import type { RenderGuard } from "../conditions/guards";
 import { type Getter, type VariableContextValue } from "../reactivity";
 import type { calculateProps } from "./calculate-props";
 import { transformKeys } from "./defaults";
+import { PIXEL_LENGTH } from "./dimension";
+import { fontSize } from "./font-size";
 import * as functions from "./functions";
 import { lineHeight } from "./line-height";
 import * as shorthands from "./shorthands";
+import { transformOrigin } from "./transform-origin";
 import { em, rem, vh, vw } from "./units";
-import { varResolver } from "./variables";
+import { varResolver, type ResolvedVariable } from "./variables";
 
 export type SimpleResolveValue = (
   value: StyleDescriptor,
@@ -38,7 +41,9 @@ export type StyleResolver = (
 const functionResolvers = {
   ...shorthands,
   ...functions,
+  fontSize,
   lineHeight,
+  transformOrigin,
   em,
   rem,
   vh,
@@ -51,6 +56,12 @@ export type ResolveValueOptions = {
   inlineVariables?: InlineVariable | undefined;
   renderGuards?: RenderGuard[];
   variableHistory?: Set<string>;
+  /**
+   * A `var()` memo for one element's pass — what each name resolved TO and the
+   * declaration that answered, kept apart from `inlineVariables`, which holds
+   * what each name IS.
+   */
+  resolvedVariables?: Record<string, ResolvedVariable>;
   /** Pass down to perform recursive calculations and avoid circular dependencies */
   calculateProps?: typeof calculateProps;
 };
@@ -75,12 +86,16 @@ export function resolveValue(
     case "string": {
       if (value === "unset") {
         return null;
-      } else if (value.endsWith("px")) {
-        // Inline vars() might set a value with a px suffix
-        return parseInt(value.slice(0, -2), 10);
-      } else {
-        return value;
       }
+
+      // An inlined `var()` can arrive with a px suffix, so a string that IS a
+      // pixel length becomes its number. The test is the WHOLE string, not just
+      // its ending: `endsWith("px")` also matched any longer value that happens
+      // to finish with a length — `radial-gradient`'s
+      // `"ellipse farthest-corner at 0px 0px"` came back as `NaN`.
+      const pixels = PIXEL_LENGTH.exec(value);
+
+      return pixels ? Number.parseFloat(value) : value;
     }
     case "object": {
       if (!Array.isArray(value)) {
@@ -90,7 +105,15 @@ export function resolveValue(
       if (isDescriptorArray(value)) {
         value = value
           .map((d) => resolveValue(d, get, options))
-          .filter((d) => d !== undefined);
+          // `null` as well as `undefined`, because the two are the SAME HOLE
+          // wearing different clothes depending on how the stylesheet travelled.
+          // In-memory (jest, the babel transform) an argument the compiler left
+          // out is `undefined`; through Metro the stylesheet is serialised with
+          // `JSON.stringify` (`metro/injection-code.ts`), which writes every
+          // array hole as `null`. Filtering only `undefined` meant a positional
+          // resolver such as `colorMix` saw a different argument list in
+          // production than in every test.
+          .filter((d) => d !== undefined && d !== null);
 
         if (castToArray && !Array.isArray(value)) {
           return [value];
@@ -124,30 +147,33 @@ export function resolveValue(
         // translate, rotate, scale, etc.
         return { [name]: simpleResolve(value[2], castToArray) };
       } else {
-        let args = simpleResolve(value[2], castToArray);
-
-        if (args === undefined) {
-          return;
-        } else if (Array.isArray(args)) {
-          let joinedArgs = args
-            .map((arg: unknown) => {
-              if (Array.isArray(arg)) {
-                return arg.flat().join(" ");
-              }
-              return arg;
-            })
-            .filter((value) => value !== "/")
-            .join(", ");
-
-          if (name === "radial-gradient") {
-            // Nativewind / Tailwind CSS hack which can force the 'in oklab' color space
-            joinedArgs = joinedArgs.replace("in oklab, ", "");
-          }
-
-          value = `${name}(${joinedArgs})`;
-        } else {
-          value = `${name}(${args})`;
+        // A name the compiler emitted that nothing here resolves. It is dropped
+        // with a warning, and there is no generic stringifier to fall back to.
+        //
+        // This is the standing drift hazard in the library: the emit side is a
+        // hand-written `case` list in `compiler/declarations.ts` and the resolve
+        // side is `functionResolvers` above, and nothing checks them against
+        // each other. Writing an unknown name back out as `name(args)` hid every
+        // instance of that drift behind a value that looks like CSS and renders
+        // as nothing — `width: pixelScale(2)` became the literal
+        // `"pixelScale(2)"`, and `transform: matrix3d(…)` a raw string inside
+        // the transform array.
+        //
+        // Joining arguments with `", "` is also a guess about a grammar, and it
+        // is the wrong guess for most of the functions that reached it. `rgb()`
+        // takes its channels space-separated with a `/` before the alpha, so a
+        // variable supplying `255 0 0` produced `rgba(255 0 0, 0.5)`, a hybrid
+        // React Native answers `null` to; a gradient's first argument is a
+        // prelude of space-separated tokens, and the stop list after it may
+        // arrive from one `var()` with its commas already collapsed away. Both
+        // families have resolvers that know their own grammar —
+        // `./functions/color-functions.ts` and `./functions/gradient-functions.ts`.
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `react-native-css: no runtime resolver for \`${name}()\`. The declaration was dropped.`,
+          );
         }
+        return;
       }
 
       return castToArray && value && !Array.isArray(value) ? [value] : value;

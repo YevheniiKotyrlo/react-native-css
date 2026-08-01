@@ -1,6 +1,12 @@
 import { compile } from "react-native-css/compiler";
 
-describe.skip("platform media queries", () => {
+// Re-enabled: `@media android` / `@media ios` compile correctly and always did
+// — the media condition in `m` was already exactly right. The suite was skipped
+// because the REST of the expectation had gone stale: colours now serialise
+// short (`#f00`), the specificity tuple changed, and every `color` declaration
+// publishes variables (`__rn-css-color` for currentcolor, plus the inherited
+// twin). A skipped suite hid a working feature.
+describe("platform media queries", () => {
   test("android", () => {
     const compiled = compile(`
     @media android and (min-width: 500px) {
@@ -14,8 +20,12 @@ describe.skip("platform media queries", () => {
           "my-class",
           [
             {
-              s: [1, 1],
-              d: [{ color: "#ff0000" }],
+              s: [2, 1],
+              d: [{ color: "#f00" }],
+              v: [
+                ["__rn-css-inherit-color", "#f00"],
+                ["__rn-css-color", "#f00"],
+              ],
               m: [
                 [
                   "&",
@@ -45,13 +55,19 @@ describe.skip("platform media queries", () => {
           "my-class",
           [
             {
-              s: [1, 1],
-              d: [{ color: "#ff0000" }],
+              s: [2, 1],
+              d: [{ color: "#f00" }],
+              v: [
+                ["__rn-css-inherit-color", "#f00"],
+                ["__rn-css-color", "#f00"],
+              ],
               m: [
-                "&",
                 [
-                  ["=", "platform", "ios"],
-                  [">=", "width", 500],
+                  "&",
+                  [
+                    ["=", "platform", "ios"],
+                    [">=", "width", 500],
+                  ],
                 ],
               ],
             },
@@ -78,7 +94,10 @@ test("@media (hover: hover)", () => {
             s: [2, 1],
             d: [{ color: "#f00" }],
             m: [["=", "hover", "hover"]],
-            v: [["__rn-css-color", "#f00"]],
+            v: [
+              ["__rn-css-inherit-color", "#f00"],
+              ["__rn-css-color", "#f00"],
+            ],
           },
         ],
       ],

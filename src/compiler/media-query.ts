@@ -38,9 +38,12 @@ export function parseMediaQuery(
   if (query.condition) {
     condition = parseMediaQueryCondition(query.condition, builder);
 
-    // If any of these are undefined, the media query is invalid
-    if (!condition || condition.some((v) => v === undefined)) {
-      return;
+    // An unrepresentable condition becomes UNREPRESENTABLE, never absent.
+    // Returning here left the rule with no condition at all, so a query written
+    // to apply in one situation applied in every one of them — the styles did
+    // not go missing, they went everywhere.
+    if (!condition || condition.some((value) => value === undefined)) {
+      condition = ["?"];
     }
   }
 
@@ -69,11 +72,16 @@ function parseMediaQueryCondition(
       return parseFeature(query.value, builder);
     case "not":
       const mediaQuery = parseMediaQueryCondition(query.value, builder);
-      return mediaQuery ? ["!", mediaQuery] : undefined;
+      return ["!", mediaQuery ?? ["?"]];
     case "operation":
-      const mediaQueries = query.conditions
-        .map((c) => parseMediaQueryCondition(c, builder))
-        .filter((v): v is MediaCondition => !!v);
+      // An unrepresentable child is KEPT as unrepresentable rather than
+      // filtered out. Dropping it rewrote the query: `(unknown) and (width >
+      // 100px)` became `(width > 100px)`, which matches strictly more often
+      // than what was written.
+      const mediaQueries = query.conditions.map(
+        (condition): MediaCondition =>
+          parseMediaQueryCondition(condition, builder) ?? ["?"],
+      );
 
       if (mediaQueries.length === 0) {
         return;
@@ -163,7 +171,13 @@ export function parseMediaFeatureValue(
           value.value satisfies never;
           return undefined;
       }
-    case "ratio":
+    case "ratio": {
+      // `<ratio>` is `<number> / <number>`, and lightningcss normalises the
+      // single-number form to `[n, 1]`. Comparing it as a plain number is exact:
+      // the runtime computes the viewport's ratio the same way.
+      const [numerator, denominator] = value.value;
+      return denominator === 0 ? undefined : numerator / denominator;
+    }
     case "env":
   }
 
