@@ -35,7 +35,8 @@ describe("Border - Border Width", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         style: {
-          borderInlineWidth: 1,
+          borderStartWidth: 1,
+          borderEndWidth: 1,
           borderInlineStyle: "solid",
         },
       },
@@ -54,14 +55,14 @@ describe("Border - Border Width", () => {
   test("border-s-1", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderInlineStartWidth: 1, borderInlineStartStyle: "solid" },
+        style: { borderStartWidth: 1, borderInlineStartStyle: "solid" },
       },
     });
   });
   test("border-e-1", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderInlineEndWidth: 1, borderInlineEndStyle: "solid" },
+        style: { borderEndWidth: 1, borderInlineEndStyle: "solid" },
       },
     });
   });
@@ -98,7 +99,8 @@ describe("Border - Border Width", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         style: {
-          borderInlineWidth: 2,
+          borderStartWidth: 2,
+          borderEndWidth: 2,
           borderInlineStyle: "solid",
         },
       },
@@ -117,14 +119,14 @@ describe("Border - Border Width", () => {
   test("border-s-2", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderInlineStartWidth: 2, borderInlineStartStyle: "solid" },
+        style: { borderStartWidth: 2, borderInlineStartStyle: "solid" },
       },
     });
   });
   test("border-e-2", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderInlineEndWidth: 2, borderInlineEndStyle: "solid" },
+        style: { borderEndWidth: 2, borderInlineEndStyle: "solid" },
       },
     });
   });
@@ -160,7 +162,8 @@ describe("Border - Border Color", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         style: {
-          borderInlineColor: "#fff",
+          borderStartColor: "#fff",
+          borderEndColor: "#fff",
         },
       },
     });
@@ -219,8 +222,8 @@ describe("Border - Border Color", () => {
     ).toStrictEqual({
       props: {
         style: {
-          borderLeftColor: "#fb2c36",
-          borderRightColor: "#fb2c36",
+          borderStartColor: "#fb2c36",
+          borderEndColor: "#fb2c36",
           color: "#fb2c36",
         },
       },
@@ -243,8 +246,7 @@ describe("Border - Border Color", () => {
     ).toStrictEqual({
       props: {
         style: {
-          borderBottomColor: "#fb2c36",
-          borderTopColor: "#fb2c36",
+          borderBlockColor: "#fb2c36",
           color: "#fb2c36",
         },
       },
@@ -377,18 +379,6 @@ describe("Borders - Border Style", () => {
       warnings: { values: { "border-style": "hidden" } },
     });
   });
-});
-
-describe.skip("Borders - Divide Width", () => {
-  // TODO
-});
-
-describe.skip("Borders - Divide Color", () => {
-  // TODO
-});
-
-describe.skip("Borders - Divide Style", () => {
-  // TODO
 });
 
 describe("Borders - Outline Width", () => {

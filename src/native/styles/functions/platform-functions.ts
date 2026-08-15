@@ -17,7 +17,13 @@ export const hairlineWidth: StyleFunctionResolver = () => {
   return StyleSheet.hairlineWidth;
 };
 
-export const pixelRatio: StyleFunctionResolver = () => {
+/**
+ * Named for the function the compiler EMITS, which is `pixelScale()`
+ * (`parseUnparsed`'s allow-list). The resolver was called `pixelRatio`, so no
+ * name ever matched it and `width: pixelScale(2)` reached React Native as the
+ * literal string `"pixelScale(2)"`.
+ */
+export const pixelScale: StyleFunctionResolver = () => {
   return PixelRatio.get();
 };
 

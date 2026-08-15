@@ -247,56 +247,47 @@ describe("Transforms - Mixed", () => {
   describe("Transforms - Transform Origin", () => {
     test("origin-center", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["50%", "50%", 0] } },
       });
     });
     test("origin-top", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["50%", "0%", 0] } },
       });
     });
     test("origin-top-right", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["100%", "0%", 0] } },
       });
     });
     test("origin-right", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["100%", "50%", 0] } },
       });
     });
     test("origin-bottom-right", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["100%", "100%", 0] } },
       });
     });
     test("origin-bottom", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["50%", "100%", 0] } },
       });
     });
     test("origin-bottom-left", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["0%", "100%", 0] } },
       });
     });
     test("origin-left", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["0%", "50%", 0] } },
       });
     });
     test("origin-top-left", async () => {
       expect(await renderCurrentTest()).toStrictEqual({
-        props: {},
-        warnings: { properties: ["transform-origin"] },
+        props: { style: { transformOrigin: ["0%", "0%", 0] } },
       });
     });
   });

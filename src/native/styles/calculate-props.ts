@@ -15,6 +15,7 @@ import {
 } from "../reactivity";
 import { transformKeys } from "./defaults";
 import { resolveValue } from "./resolve";
+import type { ResolvedVariable } from "./variables";
 
 export function calculateProps(
   get: Getter,
@@ -31,7 +32,12 @@ export function calculateProps(
   let important: Record<string, any> | undefined;
 
   const delayedStyles: (() => void)[] = [];
-  const transformStyles: (() => void)[] = [];
+  const transformStyles: DeferredTransform[] = [];
+
+  // One `var()` memo for the whole element, matching the scope of
+  // `inlineVariables` beside it. `varResolver` used to memoise INTO
+  // `inlineVariables`, which meant the memo overwrote the declarations.
+  const resolvedVariables: Record<string, ResolvedVariable> = {};
 
   for (const rule of rules) {
     if (VAR_SYMBOL in rule) {
@@ -75,6 +81,7 @@ export function calculateProps(
         guards,
         target,
         topLevelTarget,
+        resolvedVariables,
       );
     }
   }
@@ -83,8 +90,8 @@ export function calculateProps(
     delayedStyle();
   }
 
-  for (const transformStyle of transformStyles) {
-    transformStyle();
+  for (const transformStyle of orderTransforms(transformStyles)) {
+    transformStyle.apply();
   }
 
   return {
@@ -94,18 +101,94 @@ export function calculateProps(
   };
 }
 
+/**
+ * One individual transform property waiting to be written into the element's
+ * `transform` array.
+ *
+ * They are held rather than applied in place because a transform key's value
+ * can need another declaration's result — and because the ORDER they are
+ * written in is not the order they were declared in.
+ */
+interface DeferredTransform {
+  /** css-transforms-2 §3.1's composition order — see `transformCompositionRank`. */
+  readonly rank: number;
+  /**
+   * Where this one sat among the declarations, which decides ties.
+   *
+   * Declaration order IS cascade order by the time it reaches here — the rules
+   * arrive sorted by specificity — so two declarations of the same property
+   * must stay in it, or the losing one would win.
+   */
+  readonly sequence: number;
+  readonly apply: () => void;
+}
+
+/**
+ * css-transforms-2 §3.1: an element's transform is `translate`, then `rotate`,
+ * then `scale`, then the `transform` property — whatever order the declarations
+ * were written in, and whichever rules they came from.
+ *
+ * Derived from the property's NAME rather than listed, so it covers every
+ * member of `transformKeys` and cannot fall out of step when one is added:
+ * `translateX` composes with `translate` because it is the same operation on one
+ * axis.
+ *
+ * The functions React Native accepts that CSS has no individual property for —
+ * `skewX`, `matrix`, `perspective` — rank last and keep their declaration order
+ * among themselves. They can only be written through the `transform` property,
+ * which is itself applied last.
+ */
+function transformCompositionRank(prop: string | number): number {
+  const name = String(prop);
+
+  if (name.startsWith("translate")) {
+    return 0;
+  }
+
+  if (name.startsWith("rotate")) {
+    return 1;
+  }
+
+  if (name.startsWith("scale")) {
+    return 2;
+  }
+
+  return 3;
+}
+
+/**
+ * Sorted by composition rank, ties broken by declaration order.
+ *
+ * The tie-break is explicit rather than left to `Array.prototype.sort`'s
+ * stability, because the cascade depends on it and the engines this runs on are
+ * not one implementation.
+ */
+function orderTransforms(transforms: DeferredTransform[]): DeferredTransform[] {
+  return [...transforms].sort(
+    (left, right) =>
+      left.rank - right.rank || left.sequence - right.sequence,
+  );
+}
+
 export function applyDeclarations(
   get: Getter,
   declarations: StyleDeclaration[],
   inlineVariables: InlineVariable,
   inheritedVariables: VariableContextValue,
   delayedStyles: (() => void)[] = [],
-  transformStyles: (() => void)[] = [],
+  transformStyles: DeferredTransform[] = [],
   guards: RenderGuard[] = [],
   target: Record<string, any> = {},
   topLevelTarget = target,
+  resolvedVariables: Record<string, ResolvedVariable> = {},
 ) {
   const originalTarget = target;
+
+  /**
+   * The placeholder a `transform` declaration parked, if a transform-key
+   * declaration later took `target.transform` over to park its own.
+   */
+  let displacedTransform: unknown;
 
   for (const declaration of declarations) {
     target = originalTarget;
@@ -164,6 +247,26 @@ export function applyDeclarations(
 
       const shouldDelay = declaration[2];
 
+      /**
+       * The object THIS declaration writes to.
+       *
+       * `target` is one binding shared by every iteration: it is reset to
+       * `originalTarget` at the top of the loop and an array `propPath` moves
+       * it elsewhere — to `topLevelTarget` for a mapped PROP, or to a nested
+       * object for a deep path. A deferred callback runs after the whole loop,
+       * so reading `target` from inside one reads whatever the LAST declaration
+       * left behind rather than the object this declaration resolved. Both
+       * halves of the swap then land on the wrong object: the read-back fails
+       * to recognise the placeholder, so the resolved value is never written
+       * and the placeholder ships as the value.
+       *
+       * Without it, `-webkit-line-clamp: var(--n); color: var(--c)` delivers
+       * `numberOfLines: {numberOfLines: true}`, and the same two declarations
+       * in the opposite order deliver `style.color: {color: true}` — the fault
+       * is the shared binding, not the prop side of it.
+       */
+      const declarationTarget = target;
+
       if (shouldDelay || transformKeys.has(prop)) {
         /**
          * We need to delay the resolution of this value until after all
@@ -179,26 +282,77 @@ export function applyDeclarations(
         value = { [prop]: true };
 
         if (transformKeys.has(prop)) {
-          transformStyles.push(() => {
-            value = resolveValue(originalValue, get, {
-              inlineVariables,
-              inheritedVariables,
-              renderGuards: guards,
-              calculateProps,
-            });
-            applyValue(target, prop, value);
-          });
-        } else {
-          delayedStyles.push(() => {
-            if (getDeepPath(target, prop) === value) {
-              delete target[prop];
+          const placeholder = value;
+
+          transformStyles.push({
+            rank: transformCompositionRank(prop),
+            sequence: transformStyles.length,
+            apply: () => {
               value = resolveValue(originalValue, get, {
                 inlineVariables,
                 inheritedVariables,
                 renderGuards: guards,
+                resolvedVariables,
                 calculateProps,
               });
-              applyValue(target, prop, value);
+
+              if (value === undefined) {
+                // `applyValue` reads `undefined` as "set nothing", which is
+                // right for a value that was never placed and wrong for one
+                // that was: the placeholder is already IN the transform array,
+                // so a resolution that fails leaves the sentinel behind as the
+                // style. `translate: var(--pv)` shipped
+                // `transform: [{translate: true}]`.
+                //
+                // Removed by IDENTITY, so this only ever drops the sentinel this
+                // declaration parked — never a value another rule set for the
+                // same transform key in between.
+                removeTransform(declarationTarget, placeholder);
+                return;
+              }
+
+              applyValue(declarationTarget, prop, value);
+            },
+          });
+
+          // A `transform` declaration that is ITSELF awaiting resolution holds
+          // `target.transform` as its own placeholder OBJECT. Parking a
+          // transform-key placeholder replaces it with a fresh ARRAY to hold
+          // that one — so the `transform` declaration's read-back below finds
+          // something it does not recognise, treats itself as overridden, and
+          // drops. `transform: var(--t); translate: var(--o)` rendered the
+          // translate alone.
+          //
+          // Recording what was displaced is what lets that read-back tell being
+          // DISPLACED (the two properties compose, and `transformStyles` run
+          // after `delayedStyles` so the transform keys are re-applied on top)
+          // from being OVERRIDDEN by a later declaration of the same property.
+          if (
+            declarationTarget["transform"] !== undefined &&
+            !Array.isArray(declarationTarget["transform"])
+          ) {
+            displacedTransform = declarationTarget["transform"];
+          }
+        } else {
+          delayedStyles.push(() => {
+            // The second arm is the DISPLACED case above. It is guarded on
+            // `displacedTransform` being set, because `value` is reassigned to
+            // the resolution result by the body below — so once that result is
+            // `undefined`, an unguarded comparison would match the unset
+            // `displacedTransform` and re-run for every property.
+            if (
+              getDeepPath(declarationTarget, prop) === value ||
+              (displacedTransform !== undefined && value === displacedTransform)
+            ) {
+              delete declarationTarget[prop];
+              value = resolveValue(originalValue, get, {
+                inlineVariables,
+                inheritedVariables,
+                renderGuards: guards,
+                resolvedVariables,
+                calculateProps,
+              });
+              applyValue(declarationTarget, prop, value);
             }
           });
         }
@@ -207,11 +361,19 @@ export function applyDeclarations(
           inlineVariables,
           inheritedVariables,
           renderGuards: guards,
+          resolvedVariables,
           calculateProps,
         });
       }
 
-      applyValue(target, prop, value);
+      applyValue(declarationTarget, prop, value);
     }
+  }
+}
+
+/** Drop one entry from a target's `transform` array, matched by identity. */
+function removeTransform(target: Record<string, any>, entry: unknown) {
+  if (Array.isArray(target.transform)) {
+    target.transform = target.transform.filter((value) => value !== entry);
   }
 }

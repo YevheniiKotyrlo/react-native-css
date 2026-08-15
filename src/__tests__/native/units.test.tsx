@@ -6,6 +6,7 @@ import { useNativeCss, VariableContext } from "react-native-css/native";
 
 import { dimensions, VAR_SYMBOL, vh, vw } from "../../native/reactivity";
 import { emVariableName } from "../../native/styles/constants";
+import { INHERIT_VARIABLE_PREFIX } from "../../utilities";
 
 test("px", () => {
   registerCSS(`.my-class { width: 10px; }`);
@@ -97,6 +98,10 @@ test("rem - default", () => {
   expect(result.current.props.value).toStrictEqual({
     [VAR_SYMBOL]: true,
     [emVariableName]: 140,
+    // `font-size` is an inherited CSS property, so it is also published to the
+    // subtree under the inheritance prefix — the same value, a different
+    // consumer (`em` units read the one above; descendants read this one).
+    [`${INHERIT_VARIABLE_PREFIX}fontSize`]: 140,
   });
 
   expect(result.current.props.children.type).toBe(View);
@@ -118,6 +123,7 @@ test("rem - inline override", () => {
   expect(result.current.props.value).toStrictEqual({
     [VAR_SYMBOL]: true,
     [emVariableName]: 100,
+    [`${INHERIT_VARIABLE_PREFIX}fontSize`]: 100,
   });
 
   expect(result.current.props.children.type).toBe(View);
@@ -140,6 +146,7 @@ test("rem - css root font-size override", () => {
   expect(result.current.props.value).toStrictEqual({
     [VAR_SYMBOL]: true,
     [emVariableName]: 160,
+    [`${INHERIT_VARIABLE_PREFIX}fontSize`]: 160,
   });
 
   expect(result.current.props.children.type).toBe(View);
@@ -184,6 +191,7 @@ test("rem - css override", () => {
   expect(result.current.props.value).toStrictEqual({
     [VAR_SYMBOL]: true,
     [emVariableName]: [{}, "rem", 10],
+    [`${INHERIT_VARIABLE_PREFIX}fontSize`]: [{}, "rem", 10],
   });
 
   expect(result.current.props.children.type).toBe(View);

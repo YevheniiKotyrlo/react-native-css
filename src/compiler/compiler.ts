@@ -23,6 +23,7 @@ import type {
 } from "./compiler.types";
 import { parseContainerCondition } from "./container-query";
 import {
+  ABSOLUTE_UNIT_PIXELS,
   parseAngle,
   parseColor,
   parseDeclaration,
@@ -36,8 +37,59 @@ import { lightningcssLoader } from "./lightningcss-loader";
 import { parseMediaQuery } from "./media-query";
 import { StylesheetBuilder } from "./stylesheet";
 import { supportsConditionValid } from "./supports";
+import { normalizeTransformOriginDeclaration } from "./transform-origin";
 
 const defaultLogger = debug("react-native-css:compiler");
+
+const isAbsoluteUnit = (
+  unit: string,
+): unit is keyof typeof ABSOLUTE_UNIT_PIXELS => unit in ABSOLUTE_UNIT_PIXELS;
+
+/**
+ * The exact diagnostics lightningcss raises about this library's OWN at-rules.
+ *
+ * `@nativeMapping` is deliberately read as an `unknown` rule by `./atRules.ts`
+ * rather than declared through `customAtRules`, so lightningcss reports it as
+ * unrecognised. That is a fact about this vocabulary, not a diagnostic about the
+ * author's stylesheet.
+ *
+ * Matched WHOLE, not as a substring. lightningcss quotes the author's own text
+ * in its messages, so a substring test swallowed real diagnostics that merely
+ * mentioned the name — including the one case that most needs reporting, a typo
+ * in this library's own at-rule (`@nativeMapping-typo` → "Unknown at rule:
+ * @nativeMapping-typo"), and any malformed `url()` whose path contains
+ * `react-native`.
+ */
+const OWN_AT_RULE_WARNINGS = /^Unknown at rule: @(nativeMapping|react-native)$/u;
+
+
+/**
+ * Surface what lightningcss recovered from.
+ *
+ * `errorRecovery: true` turns a stylesheet-fatal parse error into a dropped
+ * rule, which is what CSS asks for — but discarding lightningcss's warnings
+ * leaves a stylesheet with a real syntax error compiling to a SMALLER
+ * stylesheet with no diagnostic anywhere.
+ */
+function reportSyntaxWarnings(
+  warnings: { message: string }[],
+  builder: StylesheetBuilder,
+  reported: Set<string>,
+) {
+  for (const warning of warnings) {
+    // The second pass reads the FIRST pass's serialised output, so a source
+    // problem that survives serialisation is diagnosed twice for one cause.
+    // The author has one mistake and should see one message.
+    if (
+      OWN_AT_RULE_WARNINGS.test(warning.message) ||
+      reported.has(warning.message)
+    ) {
+      continue;
+    }
+    reported.add(warning.message);
+    builder.addSyntaxWarning(warning.message);
+  }
+}
 
 /**
  * Converts a CSS file to a collection of style declarations that can be used with the StyleSheet API
@@ -97,53 +149,112 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
 
   const firstPassVisitor: Visitor<CustomAtRules> = {};
 
-  if (effectiveRem !== false) {
-    const remMultiplier = effectiveRem;
-    firstPassVisitor.Length = (length) => {
-      if (length.unit !== "rem") {
-        return length;
-      }
+  const remMultiplier = effectiveRem === false ? undefined : effectiveRem;
 
+  firstPassVisitor.Length = (length) => {
+    if (length.unit === "rem") {
+      return remMultiplier === undefined
+        ? length
+        : { unit: "px", value: round(length.value * remMultiplier) };
+    }
+
+    // The absolute units are exact multiples of a CSS pixel (css-values-4 §6.2),
+    // so converting them here is lossless. Without this every one of them
+    // reached `parseLength`, which knew only px/rem/%/em/vw/vh, and the WHOLE
+    // declaration was dropped — `width: 12pt` produced nothing.
+    if (isAbsoluteUnit(length.unit)) {
       return {
         unit: "px",
-        value: round(length.value * remMultiplier),
+        value: round(length.value * ABSOLUTE_UNIT_PIXELS[length.unit]),
       };
-    };
-  }
+    }
 
-  if (options.inlineVariables !== false) {
-    const exclusionList: string[] = options.inlineVariables?.exclude ?? [];
+    return length;
+  };
 
-    firstPassVisitor.Declaration = (decl) => {
-      if (
-        decl.property === "custom" &&
-        decl.value.name.startsWith("--") &&
-        !exclusionList.includes(decl.value.name)
-      ) {
-        const entry = vars.get(decl.value.name) ?? {
-          count: 0,
-          value: [
-            ...decl.value.value,
-            { type: "token", value: { type: "white-space", value: " " } },
-          ],
-        };
-        entry.count++;
-        vars.set(decl.value.name, entry);
-      }
-    };
-    firstPassVisitor.StyleSheetExit = (sheet) => {
-      return inlineVariables(sheet, vars);
-    };
-  }
+  // `deg` is the only angle unit `parseAngle` accepts, and lightningcss already
+  // normalises `rad` for us — but `turn` and `grad` reached the parser intact
+  // and resolved to `undefined`, so `transform: rotate(0.25turn)` and
+  // `linear-gradient(0.125turn, …)` each lost their angle.
+  firstPassVisitor.Angle = (angle) => {
+    // Not rounded: the conversions are exact, and rounding here loses precision
+    // the source had — `rotate(0.123456turn)` is 44.44416deg, and rounding gives
+    // 44.4442. lightningcss's own serialiser decides the printed precision.
+    switch (angle.type) {
+      case "turn":
+        return { type: "deg", value: angle.value * 360 };
+      case "grad":
+        return { type: "deg", value: angle.value * 0.9 };
+      default:
+        return angle;
+    }
+  };
 
-  const { code: firstPass } = lightningcss({
+  const inlineVariableOptions =
+    options.inlineVariables === false ? undefined : options.inlineVariables;
+  const inliningVariables = options.inlineVariables !== false;
+  const exclusionList: string[] = inlineVariableOptions?.exclude ?? [];
+
+  // The first pass is the only place a declaration is still in its ORIGINAL
+  // parse — the second pass reads whatever lightningcss serialised, and for
+  // `transform-origin` that is lossy. See `./transform-origin.ts`.
+  firstPassVisitor.Declaration = (decl) => {
+    if (
+      inliningVariables &&
+      decl.property === "custom" &&
+      decl.value.name.startsWith("--") &&
+      !exclusionList.includes(decl.value.name)
+    ) {
+      const entry = vars.get(decl.value.name) ?? {
+        count: 0,
+        value: [
+          ...decl.value.value,
+          { type: "token", value: { type: "white-space", value: " " } },
+        ],
+      };
+      entry.count++;
+      vars.set(decl.value.name, entry);
+    }
+
+    return normalizeTransformOriginDeclaration(decl);
+  };
+
+  // Unconditional, because this hook does two jobs and only one of them is
+  // variable inlining. The other is recording each rule's `@layer`, which is
+  // structure the second pass cannot see — `extractRule` flattens a
+  // `layer-block` into its children — and a stylesheet's cascade order does not
+  // stop mattering because someone turned inlining off. `inlineVariables`
+  // annotates first and returns early when there is nothing to fold, and `vars`
+  // is empty whenever `inliningVariables` is false, so this costs one walk.
+  firstPassVisitor.StyleSheetExit = (sheet) => {
+    return inlineVariables(sheet, vars);
+  };
+
+  const { code: firstPass, warnings: firstPassWarnings } = lightningcss({
     code: typeof code === "string" ? new TextEncoder().encode(code) : code,
+    // GAP, measured and deliberately left open: adding `Features.Nesting` here
+    // fixes a nested rule whose `&` is not LEADING — `.a { .c & { … } }` emits
+    // no `.c` rule at all today, and `.a { .b & .c { … } }` folds the `&` into
+    // `.b`'s compound and produces a wrong attribute query — but it also breaks
+    // every `@nativeMapping` test. The flattener runs before this compiler sees
+    // the rule, and `@nativeMapping` is read as an `unknown` at-rule inside a
+    // nested block (`./atRules.ts`), so flattening relocates it out of reach.
+    // Closing the nesting gap needs the at-rule handled first.
     include: Features.DoublePositionGradients | Features.ColorFunction,
     exclude: Features.VendorPrefixes,
     visitor: firstPassVisitor,
     filename: options.filename ?? "style.css",
     projectRoot: options.projectRoot ?? process.cwd(),
+    // CSS says a rule or declaration that fails to parse is DROPPED and its
+    // siblings survive. Without this, lightningcss rejects the whole stylesheet
+    // instead — `var()` with no argument, `var(notavar, 5px)`, or an `@property`
+    // rule missing `inherits` each throw, and every unrelated rule in the file
+    // is lost with them.
+    errorRecovery: true,
   });
+
+  const reportedSyntaxWarnings = new Set<string>();
+  reportSyntaxWarnings(firstPassWarnings, builder, reportedSyntaxWarnings);
 
   if (isLoggerEnabled) {
     const MAX_LOG_SIZE = 100 * 1024; // 100KB
@@ -167,6 +278,20 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
   };
 
   const visitor: Visitor<typeof customAtRules> = {
+    // The same `transform-origin` rescue the first pass runs, because a
+    // declaration can become one BETWEEN the passes and then meets the lossy
+    // grammar for the first time here.
+    //
+    // `transform-origin: left top 30px` written out is normalised in pass one,
+    // before serialisation. The same value behind a custom property is not: at
+    // pass-one time the declaration is `transform-origin: var(--x)`, an
+    // unparsed token list with no `<position>` to repair, and the fold that
+    // substitutes `left top 30px` into it happens in `StyleSheetExit` — after
+    // the visitor has run. Pass one then serialises a three-value
+    // `transform-origin`, and pass two parses it with the `background-position`
+    // grammar that drops the z. The variable spelling rendered `[0, 30, 0]`
+    // where the literal spelling rendered `[0, 0, 30]` — the z in the y slot.
+    Declaration: normalizeTransformOriginDeclaration,
     Rule(rule) {
       maybeMutateReactNativeOptions(rule, builder);
       return rule;
@@ -190,12 +315,15 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
     },
   };
 
-  lightningcss({
+  const { warnings: secondPassWarnings } = lightningcss({
     code: firstPass,
     visitor,
     filename: options.filename ?? "style.css",
     projectRoot: options.projectRoot ?? process.cwd(),
+    errorRecovery: true,
   });
+
+  reportSyntaxWarnings(secondPassWarnings, builder, reportedSyntaxWarnings);
 
   return {
     stylesheet: () => builder.getNativeStyleSheet(),

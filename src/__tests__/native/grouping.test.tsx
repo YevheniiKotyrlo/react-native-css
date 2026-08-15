@@ -2,8 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { View } from "react-native-css/components/View";
 import { registerCSS } from "react-native-css/jest";
 
-// import { getAnimatedStyle } from "react-native-reanimated";
-
 const parentID = "parent";
 const childID = "child";
 
@@ -58,7 +56,19 @@ test("group - active", () => {
   expect(child.props.style).toStrictEqual({ backgroundColor: "#f00" });
 });
 
-test.skip("group - active (animated)", () => {
+/**
+ * The animated twin of the test above, asserted as far as jest can see it.
+ *
+ * The interpolated frames — `rgba(151, 0, 0, 1)` half way through a 1s colour
+ * transition — belong to `react-native-reanimated`, whose CSS manager is
+ * disabled under jest (`if (!IS_JEST)` in reanimated's `AnimatedComponent`).
+ * `src/__tests__/native/animation-transition-state.test.tsx` carries the full
+ * argument and pins the two hops react-native-css does own. What is left here,
+ * and is this test's subject, is that an ANCESTOR-driven rule reaches the child
+ * the same way a rule on the child's own class does: pre-wrapped, then handed
+ * the target value.
+ */
+test("group - active (animated)", () => {
   registerCSS(`
     .group\\/item:active .my-class {
       color: red;
@@ -75,26 +85,24 @@ test.skip("group - active (animated)", () => {
   const child = screen.getByTestId(childID);
 
   expect(child.props.style).toStrictEqual(undefined);
+  // The transition declaration wraps the child in reanimated's Animated
+  // component up front, before the group is ever active — which is what lets
+  // the style change without remounting.
+  expect(child.props.collapsable).toBe(false);
 
   fireEvent(parent, "pressIn");
 
   jest.advanceTimersByTime(0);
 
-  // expect(getAnimatedStyle(child)).toStrictEqual({
-  //   color: "rgba(0, 0, 0, 1)",
-  // });
+  // The target value, in full, on the first frame. Interpolating between the
+  // element's current colour and this one is reanimated's job.
+  expect(child.props.style).toStrictEqual({ color: "#f00" });
 
   jest.advanceTimersByTime(500);
-
-  // expect(getAnimatedStyle(child)).toStrictEqual({
-  //   color: "rgba(151, 0, 0, 1)",
-  // });
+  expect(child.props.style).toStrictEqual({ color: "#f00" });
 
   jest.advanceTimersByTime(500);
-
-  // expect(getAnimatedStyle(child)).toStrictEqual({
-  //   color: "rgba(255, 0, 0, 1)",
-  // });
+  expect(child.props.style).toStrictEqual({ color: "#f00" });
 });
 
 test("group selector", () => {

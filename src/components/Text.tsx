@@ -8,8 +8,16 @@ import {
 
 import { copyComponentProperties } from "./copyComponentProperties";
 
+// Text is the component that RENDERS the CSS inherited text properties, so it
+// is the component that declares it receives them — the same way TextInput
+// declares its own `nativeStyleMapping`. Keeping this here rather than
+// special-casing Text inside `useNativeCss` is what lets the runtime stay
+// component-agnostic, and lets a custom `styled()` text component opt in.
 const mapping = {
-  className: "style",
+  className: {
+    target: "style",
+    inheritsTextStyle: true,
+  },
 } satisfies StyledConfiguration<typeof RNText>;
 
 export const Text = copyComponentProperties(

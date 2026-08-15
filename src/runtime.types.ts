@@ -94,6 +94,37 @@ interface StyledConfigurationObject<
     ResolveDotPath<T, ComponentProps<C>>,
     ComponentProps<C>
   >;
+  /**
+   * Apply CSS *inherited* text properties published by ancestors to this
+   * component's style target.
+   *
+   * CSS inherits `color`, `font-*`, `letter-spacing`, `line-height`,
+   * `text-align` and `text-transform`; React Native does not, across a
+   * `<View>` → `<Text>` boundary. Setting this makes a component receive them,
+   * so `<View className="text-red-500"><Text /></View>` renders red on native
+   * as it already does on web.
+   *
+   * Only components that RENDER text should set it — `components/Text` does.
+   * A component with a `<Text>` ancestor is left alone regardless, because
+   * React Native's own Text-in-Text inheritance already covers that case (and
+   * covers it better: it carries `style`-prop values, which never appear as
+   * CSS variables).
+   *
+   * @default false
+   */
+  inheritsTextStyle?: boolean;
+  /**
+   * Announce to descendants that a text-rendering ancestor no longer applies.
+   *
+   * React Native's own `View` resets `TextAncestorContext` to `false`, because
+   * a View inside a Text starts a fresh box that native Text -> Text
+   * inheritance does not cross. A component that behaves the same way sets
+   * this, so the CSS inheritance path takes over again below it instead of
+   * deferring to an ancestor that can no longer reach the descendant.
+   *
+   * @default false
+   */
+  resetsTextAncestor?: boolean;
 }
 
 type NativeStyleMapping<T, S> = T extends object

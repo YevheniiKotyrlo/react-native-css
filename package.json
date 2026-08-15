@@ -268,7 +268,12 @@
           "esm": true
         }
       ],
-      "typescript"
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
     ]
   },
   "packageManager": "yarn@4.9.2",

@@ -51,7 +51,8 @@ export function testContainerQuery(
   //   return false;
   // }
 
-  if (query.m && !testContainerMediaCondition(query.m, container, get)) {
+  // Only a definite `true` matches — see the three-valued logic below.
+  if (query.m && testContainerMediaCondition(query.m, container, get) !== true) {
     return false;
   }
 
@@ -79,26 +80,79 @@ function testContainerPseudoCondition(
   return true;
 }
 
+/**
+ * `undefined` means UNKNOWN — a feature or form this evaluator does not
+ * implement — which is a different answer from `false` and behaves differently
+ * under negation. The reasoning, and the CSS reference, is in
+ * `./media-query.ts`; `@container` uses the same condition language and gets the
+ * same logic so the two cannot disagree about a shared operator again.
+ */
+type ContainerVerdict = boolean | undefined;
+
 function testContainerMediaCondition(
   condition: MediaCondition,
   containerKey: WeakKey,
   get: Getter,
-): boolean {
+): ContainerVerdict {
   switch (condition[0]) {
-    case "!":
-      return !testContainerMediaCondition(condition[1], containerKey, get);
-    case "&":
-      return condition[1].every((query) => {
-        return testContainerMediaCondition(query, containerKey, get);
-      });
-    case "|":
-      return condition[1].some((query) => {
-        return testContainerMediaCondition(query, containerKey, get);
-      });
-    case "!!":
-      return false;
-    case "[]":
-      return false;
+    case "?":
+      return undefined;
+    case "!": {
+      const verdict = testContainerMediaCondition(
+        condition[1],
+        containerKey,
+        get,
+      );
+      return verdict === undefined ? undefined : !verdict;
+    }
+    case "&": {
+      let unknown = false;
+      for (const query of condition[1]) {
+        const verdict = testContainerMediaCondition(query, containerKey, get);
+        if (verdict === false) return false;
+        if (verdict === undefined) unknown = true;
+      }
+      return unknown ? undefined : true;
+    }
+    case "|": {
+      let unknown = false;
+      for (const query of condition[1]) {
+        const verdict = testContainerMediaCondition(query, containerKey, get);
+        if (verdict === true) return true;
+        if (verdict === undefined) unknown = true;
+      }
+      return unknown ? undefined : false;
+    }
+    case "!!": {
+      // MQ5 §2.4.3 boolean context. A container's size features are all
+      // numeric, so the "false" value is zero — a container with no width does
+      // not satisfy `@container (width)`.
+      const value = getContainerFeatureValue(condition[1], containerKey, get);
+      return value === undefined ? undefined : value !== 0;
+    }
+    case "[]": {
+      // `(400px < width < 800px)`. The START comparison reads with the feature
+      // on the RIGHT.
+      const [, name, start, startOperator, end, endOperator] = condition;
+      const value = getContainerFeatureValue(name, containerKey, get);
+
+      if (value === undefined) {
+        return undefined;
+      }
+
+      if (
+        typeof value !== "number" ||
+        typeof start !== "number" ||
+        typeof end !== "number"
+      ) {
+        return false;
+      }
+
+      return (
+        compareContainer(startOperator, start, value) &&
+        compareContainer(endOperator, value, end)
+      );
+    }
     case ">":
     case ">=":
     case "<":
@@ -106,6 +160,10 @@ function testContainerMediaCondition(
     case "=": {
       const left = getContainerFeatureValue(condition[1], containerKey, get);
       const right = condition[2];
+
+      if (left === undefined) {
+        return undefined;
+      }
 
       if (condition[0] === "=") {
         return left === right;
@@ -115,22 +173,35 @@ function testContainerMediaCondition(
         return false;
       }
 
-      switch (condition[0]) {
-        case ">":
-          return left > right;
-        case ">=":
-          return left > right;
-        case "<":
-          return left > right;
-        case "<=":
-          return left > right;
-        default:
-          condition[0] satisfies never;
-          return false;
-      }
+      // Each operator compares in its OWN direction. All four used to return
+      // `left > right`, so `@container (width <= 400px)` matched when the
+      // container was WIDER, and only `>` was ever right.
+      return compareContainer(condition[0], left, right);
     }
     default:
       condition satisfies never;
+      return undefined;
+  }
+}
+
+function compareContainer(
+  operator: ">" | ">=" | "<" | "<=" | "=",
+  left: number,
+  right: number,
+): boolean {
+  switch (operator) {
+    case "=":
+      return left === right;
+    case ">":
+      return left > right;
+    case ">=":
+      return left >= right;
+    case "<":
+      return left < right;
+    case "<=":
+      return left <= right;
+    default:
+      operator satisfies never;
       return false;
   }
 }

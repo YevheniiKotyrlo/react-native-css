@@ -192,7 +192,10 @@ describe("Backgrounds - Background Image", () => {
     ).toStrictEqual({
       props: {
         style: {
-          experimental_backgroundImage: ["none"],
+          // One comma-separated string, which is what `background-image` is in
+          // CSS and what React Native's `processBackgroundImage` reads. An
+          // array of strings is neither of the two shapes it accepts.
+          experimental_backgroundImage: "none",
         },
       },
     });
@@ -309,8 +312,4 @@ describe("Backgrounds - Background Image", () => {
       },
     });
   });
-});
-
-describe.skip("Backgrounds - Gradient Color Stops", () => {
-  // TODO
 });
