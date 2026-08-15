@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { I18nManager, PixelRatio, Platform } from "react-native";
+import { Appearance, I18nManager, PixelRatio, Platform } from "react-native";
 
 import type {
   MediaCondition,
@@ -123,9 +123,12 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
     case "any-pointer":
       return POINTER_IS_FINE ? "fine" : "coarse";
     case "prefers-color-scheme":
-      // With no OS preference `Appearance.getColorScheme()` is null, and MQ5
-      // §5.4 makes `light` the answer in that case rather than neither.
-      return get(colorScheme) ?? "light";
+      // The same resolution the public `colorScheme.get()` uses. Reading the raw
+      // observable alone leaves the class layer matching neither light nor dark
+      // whenever it holds null — which is its value at rest, and after
+      // `set(null)`. With no OS preference either, MQ5 §5.4 makes `light` the
+      // answer rather than neither.
+      return get(colorScheme) ?? Appearance.getColorScheme() ?? "light";
     // Each of these maps 1:1 onto an `AccessibilityInfo` getter plus its change
     // event.
     case "prefers-reduced-motion":
