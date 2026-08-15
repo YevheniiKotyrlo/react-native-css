@@ -7,7 +7,7 @@ import type {
 
 import { compile, type CompilerOptions } from "../compiler";
 import { getNativeInjectionCode } from "./injection-code";
-import { bold, dim, yellow } from "./picocolors";
+import { reportCompilerWarnings, type WarningLevel } from "./warnings";
 
 const worker =
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -15,7 +15,9 @@ const worker =
 
 export async function transform(
   config: JsTransformerConfig & {
-    reactNativeCSS?: CompilerOptions | undefined;
+    reactNativeCSS?:
+      | (CompilerOptions & { warnings?: WarningLevel | undefined })
+      | undefined;
   },
   projectRoot: string,
   filePath: string,
@@ -37,17 +39,25 @@ export async function transform(
 
   const css = cssFile.output[0].data.css.code.toString();
 
+  const { warnings: warningLevel, ...compilerOptions } =
+    config.reactNativeCSS ?? {};
+
   const compiled = compile(css, {
-    ...config.reactNativeCSS,
+    ...compilerOptions,
     filename: filePath,
     projectRoot: projectRoot,
   });
 
   const productionJS = compiled.stylesheet();
 
-  if (options.dev) {
-    logWarnings(filePath, compiled.warnings());
-  }
+  // The compiler records every declaration it could not translate. This is the
+  // only place a real build can read them — nothing downstream of the
+  // transformer ever sees the compile result again.
+  reportCompilerWarnings(compiled.warnings(), {
+    filename: filePath,
+    projectRoot,
+    level: warningLevel,
+  });
 
   data = Buffer.from(getNativeInjectionCode([], [productionJS]));
 
@@ -66,39 +76,4 @@ export async function transform(
   };
 
   return transform;
-}
-
-function logWarnings(
-  filePath: string,
-  warnings: ReturnType<ReturnType<typeof compile>["warnings"]>,
-) {
-  const lines: string[] = [];
-
-  if (warnings.properties?.length) {
-    lines.push(
-      `properties with no React Native equivalent: ${[...new Set(warnings.properties)].join(", ")}`,
-    );
-  }
-
-  if (warnings.values) {
-    for (const [property, values] of Object.entries(warnings.values)) {
-      lines.push(
-        `unsupported values for ${property}: ${[...new Set(values.map(String))].join(", ")}`,
-      );
-    }
-  }
-
-  if (warnings.functions?.length) {
-    lines.push(
-      `unsupported functions: ${[...new Set(warnings.functions)].join(", ")}`,
-    );
-  }
-
-  if (!lines.length) {
-    return;
-  }
-
-  console.warn(
-    `${yellow(bold("react-native-css"))} skipped styles in ${filePath} that cannot be represented on native:\n${lines.map((line) => dim(`  - ${line}`)).join("\n")}`,
-  );
 }
