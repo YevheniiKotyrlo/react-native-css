@@ -11,6 +11,7 @@ import {
 // The NATIVE provider, whose value is a `StyleDescriptor`. `react-native-css`
 // resolves to the web build under `tsc`, and that one takes `string | number`.
 import { VariableContextProvider } from "react-native-css/native-internal";
+import type { CustomPropertyValue } from "react-native-css/runtime";
 import processFilter from "react-native/Libraries/StyleSheet/processFilter";
 import processTransform from "react-native/Libraries/StyleSheet/processTransform";
 
@@ -43,7 +44,7 @@ import { parseVariableValue } from "../../native/styles/parse-value";
 function provided(
   css: string,
   className: string,
-  value: StyleDescriptor,
+  value: CustomPropertyValue,
   surface: "view" | "text" = "view",
 ): Record<string, unknown> | undefined {
   registerCSS(css);
@@ -84,7 +85,7 @@ function literal(
 function providedAnimationConfig(
   css: string,
   className: string,
-  value: StyleDescriptor,
+  value: CustomPropertyValue,
 ): Record<string, unknown> | undefined {
   registerCSS(css);
 
@@ -513,8 +514,19 @@ test("a number passes through untouched", () => {
 });
 
 test("a style function passes through untouched", () => {
+  // A compiled style function is not a `CustomPropertyValue` — the provider's
+  // prop type describes what an AUTHOR may write, and a descriptor's leading
+  // metadata object is not writable CSS. The runtime still hands one back
+  // untouched, which is what this asserts, so the descriptor is bridged here
+  // rather than widening the public type to admit it.
+  const styleFunction = [{}, "em", 2, 1] satisfies StyleDescriptor;
+
   expect(
-    provided(`.pt-fn { width: var(--p); }`, "pt-fn", [{}, "em", 2, 1]),
+    provided(
+      `.pt-fn { width: var(--p); }`,
+      "pt-fn",
+      styleFunction as unknown as CustomPropertyValue,
+    ),
   ).toStrictEqual({ width: 28 });
 });
 

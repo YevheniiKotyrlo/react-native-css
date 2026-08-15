@@ -5,10 +5,9 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import type { StyleDescriptor } from "react-native-css/compiler";
-
 import { VAR_SYMBOL, type VariableContextValue } from "../native/reactivity";
 import { parseVariableValue } from "../native/styles/parse-value";
+import type { CustomPropertyValue } from "../runtime.types";
 import { assignInheritedVariables } from "./root";
 
 globalThis.__react_native_css_variable_context ??=
@@ -36,7 +35,9 @@ export const VariableContext = globalThis.__react_native_css_variable_context;
  * quoted font family must not be tokenised a second time.
  */
 export function VariableContextProvider(
-  props: PropsWithChildren<{ value: Record<`--${string}`, StyleDescriptor> }>,
+  props: PropsWithChildren<{
+    value: Record<`--${string}`, CustomPropertyValue>;
+  }>,
 ) {
   const inheritedVariables = useContext(VariableContext);
 
