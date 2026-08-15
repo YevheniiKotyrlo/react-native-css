@@ -195,6 +195,22 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
   const inliningVariables = options.inlineVariables !== false;
   const exclusionList: string[] = inlineVariableOptions?.exclude ?? [];
 
+  // The inliner runs in this pass, so the registrations it has to respect are collected
+  // here rather than read off the builder, which the second pass fills. lightningcss
+  // keeps only the last @property rule per name, so this sees the winning declaration.
+  //
+  // Unconditional, like `StyleSheetExit` below: `inlineVariables` also records each
+  // rule's `@layer`, so it runs even with inlining off, and it reads this set.
+  const nonInheritedVariables = new Set<string>();
+
+  firstPassVisitor.Rule = (rule) => {
+    if (rule.type === "property" && !rule.value.inherits) {
+      nonInheritedVariables.add(rule.value.name);
+    }
+
+    return rule;
+  };
+
   // The first pass is the only place a declaration is still in its ORIGINAL
   // parse — the second pass reads whatever lightningcss serialised, and for
   // `transform-origin` that is lossy. See `./transform-origin.ts`.
@@ -227,7 +243,7 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
   // annotates first and returns early when there is nothing to fold, and `vars`
   // is empty whenever `inliningVariables` is false, so this costs one walk.
   firstPassVisitor.StyleSheetExit = (sheet) => {
-    return inlineVariables(sheet, vars);
+    return inlineVariables(sheet, vars, nonInheritedVariables);
   };
 
   const { code: firstPass, warnings: firstPassWarnings } = lightningcss({
@@ -534,17 +550,22 @@ function extractPropertyRule(
   propertyRule: PropertyRule,
   builder: StylesheetBuilder,
 ) {
-  const { initialValue, name } = propertyRule;
+  const { inherits, initialValue, name } = propertyRule;
+
+  const varName = name.startsWith("--") ? name.slice(2) : name;
+
+  // Recorded before the early return below, as inherits is independent of initial-value
+  if (!inherits) {
+    builder.addNonInheritedVariable(varName);
+  }
 
   if (initialValue == null) {
     return;
   }
-
-  const varName = name.startsWith("--") ? name.slice(2) : name;
   const value = parsePropertyInitialValue(initialValue, builder);
 
   if (value !== undefined) {
-    builder.addRootVariable(varName, value);
+    builder.addRegisteredInitialValue(varName, value);
   }
 }
 

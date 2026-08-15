@@ -30,6 +30,7 @@ import { LAYER_MARKER_PROPERTY } from "./stylesheet";
 export function inlineVariables(
   stylesheet: StyleSheet,
   vars: Map<string, UniqueVarInfo>,
+  nonInheritedVariables: ReadonlySet<string>,
 ) {
   const annotation = annotateRules(stylesheet.rules, ROOT_SCOPE, {
     universalNames: new Set<string>(),
@@ -42,7 +43,10 @@ export function inlineVariables(
     // the two wins depends on the element — so only a property declared
     // exactly once is ever a candidate. WHERE each candidate may then be
     // folded is `canFold`'s question, asked per reference below.
-    if (info.count !== 1) {
+    //
+    // A property registered `inherits: false` reaches the declaring element and
+    // nothing below it, so a consumer in another rule must resolve it at runtime.
+    if (info.count !== 1 || nonInheritedVariables.has(name)) {
       vars.delete(name);
     } else {
       flattenVar(name, vars, annotation);

@@ -247,6 +247,8 @@ export class StylesheetBuilder {
       ruleSets: Record<string, StyleRuleSet>;
       rootVariables?: VariableRecord;
       universalVariables?: VariableRecord;
+      nonInheritedVariables?: Set<string>;
+      registeredInitialValues?: VariableRecord;
       animations?: AnimationRecord;
       rem: number;
       ruleOrder: number;
@@ -384,6 +386,16 @@ export class StylesheetBuilder {
         // Reverse these so the most specific variables are first
         ([key, value]) => [key, value.reverse()] as const,
       );
+    }
+
+    if (this.shared.nonInheritedVariables?.size) {
+      stylesheetOptions.vn = [...this.shared.nonInheritedVariables];
+    }
+
+    if (this.shared.registeredInitialValues) {
+      stylesheetOptions.vi = Object.entries(
+        this.shared.registeredInitialValues,
+      ).map(([key, value]) => [key, value] as const);
     }
 
     if (this.shared.animations) {
@@ -1010,6 +1022,20 @@ export class StylesheetBuilder {
     this.shared.rootVariables ??= {};
     this.shared.rootVariables[name] ??= [];
     this.shared.rootVariables[name].push([value]);
+  }
+
+  addNonInheritedVariable(name: string) {
+    this.shared.nonInheritedVariables ??= new Set();
+    this.shared.nonInheritedVariables.add(name);
+  }
+
+  /**
+   * A registration carries exactly one initial value, so this assigns where
+   * addRootVariable pushes — there is no list of candidates to pick from.
+   */
+  addRegisteredInitialValue(name: string, value: StyleDescriptor) {
+    this.shared.registeredInitialValues ??= {};
+    this.shared.registeredInitialValues[name] = [[value]];
   }
 
   newAnimationFrames(name: string) {

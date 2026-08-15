@@ -1,5 +1,7 @@
 import type { StyleDescriptor, StyleFunction } from "react-native-css/compiler";
 import {
+  nonInheritedVariables,
+  registeredInitialValues,
   rootVariables,
   universalVariables,
 } from "react-native-css/native-internal";
@@ -145,12 +147,26 @@ export function lookupVariable(
       return { kind: "declared", descriptor: universal, value: universalValue };
     }
 
-    const root = get(rootVariables(name));
-    const rootValue = resolve(root);
+    // :root declares the property on the root element and every other element reads it by
+    // inheritance, so a registration that switches inheritance off skips this rung. The
+    // universal rung above stays: `* { --x }` declares the property ON each element
+    if (!nonInheritedVariables.has(name)) {
+      const root = get(rootVariables(name));
+      const rootValue = resolve(root);
 
-    if (rootValue !== undefined) {
-      resolved[name] = { descriptor: root, value: rootValue };
-      return { kind: "declared", descriptor: root, value: rootValue };
+      if (rootValue !== undefined) {
+        resolved[name] = { descriptor: root, value: rootValue };
+        return { kind: "declared", descriptor: root, value: rootValue };
+      }
+    }
+
+    // Last, because a declaration anywhere above beats the property's own default
+    const initial = get(registeredInitialValues(name));
+    const initialValue = resolve(initial);
+
+    if (initialValue !== undefined) {
+      resolved[name] = { descriptor: initial, value: initialValue };
+      return { kind: "declared", descriptor: initial, value: initialValue };
     }
 
     return { kind: "undeclared" };
