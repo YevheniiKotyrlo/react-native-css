@@ -4,6 +4,7 @@ import type {
   QueryFeatureFor_ContainerSizeFeatureId,
 } from "lightningcss";
 
+import { neverMatches, type CompiledContainerCondition } from "./compiled-condition";
 import type { MediaCondition } from "./compiler.types";
 import {
   parseMediaFeatureOperator,
@@ -14,16 +15,23 @@ import type { StylesheetBuilder } from "./stylesheet";
 export function parseContainerCondition(
   condition: CSSContainerCondition,
   builder: StylesheetBuilder,
-): MediaCondition {
+): CompiledContainerCondition {
   const containerQuery = parseContainerQueryCondition(condition, builder);
 
-  // An unrepresentable condition becomes UNREPRESENTABLE, never absent —
-  // returning nothing here left the rule matching under ANY container.
-  if (!containerQuery || containerQuery.some((value) => value === undefined)) {
-    return ["?"];
+  // A condition that did not compile cannot be shown to match, so the BLOCK is
+  // dropped — emitting its rules with no condition left them matching under
+  // ANY container, which is the opposite of what the author wrote. Nested
+  // positions cannot drop a whole block, so they carry UNREPRESENTABLE instead
+  // and the runtime's three-valued logic settles them.
+  if (
+    !containerQuery ||
+    containerQuery.some((value) => value === undefined) ||
+    neverMatches(containerQuery)
+  ) {
+    return { type: "never" };
   }
 
-  return containerQuery;
+  return { type: "condition", condition: containerQuery };
 }
 
 function parseContainerQueryCondition(
@@ -34,8 +42,13 @@ function parseContainerQueryCondition(
     case "feature":
       return parseFeature(condition.value, builder);
     case "not":
+      // An unrepresentable operand is NEGATED as unknown rather than dropped:
+      // `not (unrepresentable)` is not a query that always matches.
       const query = parseContainerCondition(condition.value, builder);
-      return ["!", query ?? ["?"]];
+      return [
+        "!",
+        query.type === "condition" ? query.condition : (["?"] as MediaCondition),
+      ];
     case "operation":
       // An unrepresentable child is KEPT rather than filtered out — dropping it
       // rewrote the query into one that matches strictly more often.

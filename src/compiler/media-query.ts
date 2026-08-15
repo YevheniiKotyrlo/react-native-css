@@ -8,6 +8,7 @@ import type {
   QueryFeatureFor_MediaFeatureId,
 } from "lightningcss";
 
+import { neverMatches, type CompiledCondition } from "./compiled-condition";
 import type {
   MediaCondition,
   MediaFeatureComparison,
@@ -19,14 +20,17 @@ import type { StylesheetBuilder } from "./stylesheet";
 export function parseMediaQuery(
   query: CSSMediaQuery,
   builder: StylesheetBuilder,
-) {
+): CompiledCondition {
   let platformCondition: MediaCondition | undefined;
   let condition: MediaCondition | undefined;
 
   if (query.mediaType) {
-    // Print is for printing documents
+    // Print is for printing documents. A bare `@media print` is dropped before
+    // it reaches here, so what arrives is `@media not print ...` — which reads
+    // `not (print and ...)` and is therefore true on every non-print device,
+    // whatever the rest of the query says.
     if (query.mediaType === "print") {
-      return;
+      return { type: "always" };
     }
 
     // These all/screen are not conditions, they always apply
@@ -53,14 +57,20 @@ export function parseMediaQuery(
       : platformCondition || condition;
 
   if (!mediaQuery) {
-    return;
+    return { type: "always" };
   }
 
   if (query.qualifier === "not") {
     mediaQuery = ["!", mediaQuery];
   }
 
-  builder.addMediaQuery(mediaQuery);
+  // A query that cannot be shown to match takes the block with it, rather than
+  // shipping a rule the runtime will refuse on every element it reaches.
+  if (neverMatches(mediaQuery)) {
+    return { type: "never" };
+  }
+
+  return { type: "condition", condition: mediaQuery };
 }
 
 function parseMediaQueryCondition(

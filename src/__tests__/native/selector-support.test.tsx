@@ -938,11 +938,12 @@ test("an unrepresentable @media condition makes the rule unmatchable", () => {
   // The other half of the same defect, and the general case: a condition this
   // compiler cannot translate compiles to the `["?"]` marker, which evaluates
   // to UNKNOWN and therefore never matches — rather than vanishing and leaving
-  // the rule unconditional.
+  // the rule unconditional. At the ROOT of a block's condition the marker
+  // settles the block before it is emitted, so there is no rule to evaluate.
   const sheet = compiled(
     `@media (min-width: env(safe-area-inset-top)) { .unrep-a { width: 1px; } }`,
   );
-  expect(sheet.s?.[0]?.[1]?.[0]?.m).toStrictEqual([["?"]]);
+  expect(sheet.s).toBeUndefined();
 
   registerCSS(
     `@media (min-width: env(safe-area-inset-top)) { .ar2 { color: blue; } }`,
@@ -1354,11 +1355,11 @@ test("@container logical-size features never match", () => {
 });
 
 test("@container style() queries are unrepresentable, so they never match", () => {
-  // The condition compiles to the `["?"]` marker...
+  // The condition compiles to the `["?"]` marker, and a marker at the ROOT of a
+  // block's condition settles the block: nothing is emitted for it at all.
   expect(
-    compiled(`@container style(--theme: dark) { .cs-a { width: 1px; } }`)
-      .s?.[0]?.[1]?.[0]?.cq,
-  ).toStrictEqual([{ m: ["?"] }]);
+    compiled(`@container style(--theme: dark) { .cs-a { width: 1px; } }`).s,
+  ).toBeUndefined();
 
   // GAP, but now the safe direction: CSS Containment 3 §5 style queries need
   // the declaring container's computed value, which this runtime does not
