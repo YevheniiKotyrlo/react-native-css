@@ -2,6 +2,7 @@ import type { StyleDescriptor } from "react-native-css/compiler";
 import { isStyleDescriptorArray } from "react-native-css/utilities";
 
 import type { StyleFunctionResolver } from "../resolve";
+import { normalizeScaleValue } from "../scale-value";
 
 /**
  * `none` is the IDENTITY, not a value React Native can hold. Forwarding the
@@ -59,14 +60,21 @@ const AXIS_KEYS = {
 const isAxisKeyword = (value: unknown): value is keyof typeof AXIS_KEYS =>
   value === "x" || value === "y" || value === "z";
 
+// A percentage is coerced before the type guards below, so an axis that
+// resolved to "75%" is a valid numeric component rather than a string that
+// reaches React Native's transform validator and crashes the screen.
 export const scale: StyleFunctionResolver = (resolveValue, descriptor) => {
   const args = resolveComponents(resolveValue, descriptor[2]);
 
   if (args.kind === "single") {
-    return isNoneKeyword(args.value) ? { scale: 1 } : { scale: args.value };
+    return isNoneKeyword(args.value)
+      ? { scale: 1 }
+      : { scale: normalizeScaleValue(args.value) };
   }
 
-  const [x, y] = args.components;
+  const [x, y] = args.components.map((component) =>
+    normalizeScaleValue(component),
+  );
 
   const isXValid = typeof x === "string" || typeof x === "number";
   const isYValid = typeof y === "string" || typeof y === "number";

@@ -14,6 +14,7 @@ import { PIXEL_LENGTH } from "./dimension";
 import { fontSize } from "./font-size";
 import * as functions from "./functions";
 import { lineHeight } from "./line-height";
+import { normalizeScaleValue, scaleTransformKeys } from "./scale-value";
 import * as shorthands from "./shorthands";
 import { transformOrigin } from "./transform-origin";
 import { em, rem, vh, vw } from "./units";
@@ -145,7 +146,16 @@ export function resolveValue(
         ) as StyleDescriptor;
       } else if (transformKeys.has(name)) {
         // translate, rotate, scale, etc.
-        return { [name]: simpleResolve(value[2], castToArray) };
+        // scaleX/scaleY arrive here rather than through a resolver function, so
+        // this is the second boundary a percentage can escape from — React
+        // Native rejects a non-numeric scale component by crashing the screen.
+        const resolved = simpleResolve(value[2], castToArray);
+
+        return {
+          [name]: scaleTransformKeys.has(name)
+            ? normalizeScaleValue(resolved)
+            : resolved,
+        };
       } else {
         // A name the compiler emitted that nothing here resolves. It is dropped
         // with a warning, and there is no generic stringifier to fall back to.
