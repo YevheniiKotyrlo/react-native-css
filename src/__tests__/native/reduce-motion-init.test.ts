@@ -7,6 +7,20 @@
 // triggers its lazy DevMenu getter and throws.
 const noopSubscription = { remove: () => undefined };
 
+/**
+ * `jest.resetModules()` is not enough on its own: reactivity's process-global
+ * state is pinned to `globalThis` against the dual package hazard, so a
+ * re-imported copy reuses the first one's observables and never re-runs the
+ * seed these tests are about. Dropping the pin is what makes the next import an
+ * initialisation, which is the thing under test.
+ */
+function reimportReactivity() {
+  jest.resetModules();
+  globalThis.__react_native_css_reactivity = undefined;
+
+  return import("../../native/reactivity");
+}
+
 const withAccessibilityInfo =
   (accessibilityInfo: unknown) => (): Record<string, unknown> => {
     const actual = jest.requireActual<Record<string, unknown>>("react-native");
@@ -21,13 +35,12 @@ const withAccessibilityInfo =
 
 describe("an AccessibilityInfo without isReduceMotionEnabled", () => {
   test("does not stop the reactivity module importing", async () => {
-    jest.resetModules();
     jest.doMock(
       "react-native",
       withAccessibilityInfo({ addEventListener: () => noopSubscription }),
     );
 
-    const reactivity = await import("../../native/reactivity");
+    const reactivity = await reimportReactivity();
 
     expect(reactivity.reduceMotion.get()).toBe(false);
     expect(reactivity.colorScheme).toBeDefined();
@@ -37,7 +50,6 @@ describe("an AccessibilityInfo without isReduceMotionEnabled", () => {
 
 describe("an AccessibilityInfo whose getter rejects", () => {
   test("leaves the safe default in place and does not reject unhandled", async () => {
-    jest.resetModules();
     jest.doMock(
       "react-native",
       withAccessibilityInfo({
@@ -47,7 +59,7 @@ describe("an AccessibilityInfo whose getter rejects", () => {
       }),
     );
 
-    const reactivity = await import("../../native/reactivity");
+    const reactivity = await reimportReactivity();
     await Promise.resolve();
 
     expect(reactivity.reduceMotion.get()).toBe(false);
@@ -69,7 +81,7 @@ describe("a working AccessibilityInfo", () => {
       }),
     );
 
-    const reactivity = await import("../../native/reactivity");
+    const reactivity = await reimportReactivity();
     await Promise.resolve();
 
     // The seed is what connects the observable to the OS at all; without it the
