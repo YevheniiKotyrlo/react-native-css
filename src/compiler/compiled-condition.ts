@@ -28,34 +28,3 @@ export type CompiledContainerCondition = Exclude<
   CompiledCondition,
   { type: "always" }
 >;
-
-/**
- * Whether a compiled condition can ever be shown to be TRUE.
- *
- * `["?"]` is a condition this compiler could not represent, and the runtime
- * evaluates it as UNKNOWN rather than as false — which is what keeps
- * `not (unrepresentable)` from becoming a query that always matches. Unknown
- * never satisfies a rule, so a whole block guarded by one can be dropped
- * instead of shipped and never matched. Every operator below is the same
- * three-valued question the runtime asks, read backwards: an AND is settled by
- * one arm that cannot be true, an OR needs one arm that can be, and a NOT of
- * unknown is unknown rather than true.
- *
- * Only a condition that is unrepresentable at its ROOT can drop a block. A
- * nested one is carried through to the runtime, where it still has to be
- * weighed against the arms beside it.
- */
-export function neverMatches(condition: MediaCondition): boolean {
-  switch (condition[0]) {
-    case "?":
-      return true;
-    case "!":
-      return neverMatches(condition[1]);
-    case "&":
-      return condition[1].some(neverMatches);
-    case "|":
-      return condition[1].every(neverMatches);
-    default:
-      return false;
-  }
-}

@@ -4,11 +4,11 @@ import type {
   QueryFeatureFor_ContainerSizeFeatureId,
 } from "lightningcss";
 
-import { neverMatches, type CompiledContainerCondition } from "./compiled-condition";
+import type { CompiledContainerCondition } from "./compiled-condition";
 import type { MediaCondition } from "./compiler.types";
 import {
+  parseMediaFeatureOperand,
   parseMediaFeatureOperator,
-  parseMediaFeatureValue,
 } from "./media-query";
 import type { StylesheetBuilder } from "./stylesheet";
 
@@ -23,11 +23,7 @@ export function parseContainerCondition(
   // ANY container, which is the opposite of what the author wrote. Nested
   // positions cannot drop a whole block, so they carry UNREPRESENTABLE instead
   // and the runtime's three-valued logic settles them.
-  if (
-    !containerQuery ||
-    containerQuery.some((value) => value === undefined) ||
-    neverMatches(containerQuery)
-  ) {
+  if (!containerQuery || containerQuery.some((value) => value === undefined)) {
     return { type: "never" };
   }
 
@@ -47,7 +43,9 @@ function parseContainerQueryCondition(
       const query = parseContainerCondition(condition.value, builder);
       return [
         "!",
-        query.type === "condition" ? query.condition : (["?"] as MediaCondition),
+        query.type === "condition"
+          ? query.condition
+          : (["?"] as MediaCondition),
       ];
     case "operation":
       // An unrepresentable child is KEPT rather than filtered out — dropping it
@@ -92,21 +90,21 @@ function parseFeature(
       return [
         "=",
         feature.name,
-        parseMediaFeatureValue(feature.value, builder),
+        parseMediaFeatureOperand(feature.value, builder),
       ];
     case "range":
       return [
         parseMediaFeatureOperator(feature.operator),
         feature.name,
-        parseMediaFeatureValue(feature.value, builder),
+        parseMediaFeatureOperand(feature.value, builder),
       ];
     case "interval":
       return [
         "[]",
         feature.name,
-        parseMediaFeatureValue(feature.start, builder),
+        parseMediaFeatureOperand(feature.start, builder),
         parseMediaFeatureOperator(feature.startOperator),
-        parseMediaFeatureValue(feature.end, builder),
+        parseMediaFeatureOperand(feature.end, builder),
         parseMediaFeatureOperator(feature.endOperator),
       ];
     default:

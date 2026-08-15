@@ -74,6 +74,18 @@ export function resolveValue(
 ): any {
   const { castToArray } = options;
 
+  // The same hole the array filter below names, one level up. An argument the
+  // compiler left out is `undefined` in memory and `null` once the stylesheet
+  // has been through `JSON.stringify` on its way into a bundle — so a resolver
+  // reading a positional slot saw a different value in production than in every
+  // test, and `conic-gradient(red, blue)`, whose omitted prelude IS that slot,
+  // rendered nothing on a device while the suite was green. `null` reaching a
+  // media feature OPERAND means something else and is read before this, by the
+  // condition evaluators, which never call through here.
+  if (value === null) {
+    return;
+  }
+
   switch (typeof value) {
     case "bigint":
     case "symbol":
@@ -194,7 +206,16 @@ export function resolveValue(
 function isDescriptorArray(
   value: StyleDescriptor | StyleDescriptor[],
 ): value is StyleDescriptor[] {
-  return Array.isArray(value) && typeof value[0] === "object"
+  // `null` is excluded explicitly because `typeof null` is `"object"`, and the
+  // object in slot 0 is what tells a style function from a list of arguments.
+  // An argument the compiler left out is `null` once the stylesheet has been
+  // through `JSON.stringify` on its way into a bundle, so a list whose FIRST
+  // argument is omitted — `conic-gradient(red, blue)`, whose prelude is that
+  // slot — read as a style function named `#f00` and resolved to nothing on a
+  // device, while every test injected the compiler's object and saw a list.
+  return Array.isArray(value) &&
+    value[0] !== null &&
+    typeof value[0] === "object"
     ? Array.isArray(value[0])
     : true;
 }

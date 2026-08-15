@@ -160,12 +160,8 @@ describe("testMediaFeatureInterval", () => {
       ["[]", "orientation", 400, "<", 800, "<"],
       "landscape",
     ],
-    [
-      "an unresolved start bound",
-      ["[]", "width", undefined, "<", 800, "<"],
-      600,
-    ],
-    ["an unresolved end bound", ["[]", "width", 400, "<", undefined, "<"], 600],
+    ["an unresolved start bound", ["[]", "width", null, "<", 800, "<"], 600],
+    ["an unresolved end bound", ["[]", "width", 400, "<", null, "<"], 600],
   ];
 
   test.each(unanswerable)("%s never matches", (_label, condition, value) => {

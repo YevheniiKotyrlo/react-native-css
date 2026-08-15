@@ -37,6 +37,22 @@ const Order = Specificity.Order;
 export const inlineSpecificity: SpecificityArray = [];
 inlineSpecificity[Specificity.Inline] = 1;
 
+/**
+ * A slot's rank, with every way of leaving it empty reading as zero.
+ *
+ * A specificity array is sparse — a rule states only the slots it uses — and
+ * how the empty ones read depends on how the stylesheet travelled. In memory a
+ * hole is `undefined`; through Metro, which writes the stylesheet into the
+ * bundle as JSON, `JSON.stringify` turns every hole into `null`. Comparing the
+ * raw slots therefore found a DIFFERENCE between two rules that both left the
+ * slot empty, and returned the `0` that difference computes to — settling the
+ * comparison on the first such slot and never reaching the one that decides it.
+ * On a device that made an unlayered rule tie with a layered one instead of
+ * outranking it; in the tests, which injected the compiler's own object, both
+ * sides were `undefined` and the bug was invisible.
+ */
+const rank = (spec: SpecificityArray, slot: number): number => spec[slot] || 0;
+
 export const specificityCompareFn = (
   a: StyleRule | InlineStyleRecord,
   b: StyleRule | InlineStyleRecord,
@@ -44,26 +60,26 @@ export const specificityCompareFn = (
   const aSpec = a.s ? a.s : inlineSpecificity;
   const bSpec = b.s ? b.s : inlineSpecificity;
 
-  if (aSpec[Important] !== bSpec[Important]) {
-    return (aSpec[Important] || 0) - (bSpec[Important] || 0);
-  } else if (aSpec[Inline] !== bSpec[Inline]) {
-    return (aSpec[Inline] || 0) - (bSpec[Inline] || 0);
-  } else if (aSpec[Layer] !== bSpec[Layer]) {
+  for (const slot of [
+    Important,
+    Inline,
     // Above every specificity slot below it: CSS Cascade 5 §6.4.4 puts layer
     // order ahead of specificity, so an unlayered `.x` beats a layered `.x.y`.
-    return (aSpec[Layer] || 0) - (bSpec[Layer] || 0);
-  } else if (aSpec[Id] !== bSpec[Id]) {
+    Layer,
     // An id outranks any number of classes, so it cannot share the class slot.
     // Every rule without one leaves this slot empty, so the comparison falls
     // straight through for them.
-    return (aSpec[Id] || 0) - (bSpec[Id] || 0);
-  } else if (aSpec[PseudoElements] !== bSpec[PseudoElements]) {
-    return (aSpec[PseudoElements] || 0) - (bSpec[PseudoElements] || 0);
-  } else if (aSpec[ClassName] !== bSpec[ClassName]) {
-    return (aSpec[ClassName] || 0) - (bSpec[ClassName] || 0);
-  } else if (aSpec[Order] !== bSpec[Order]) {
-    return (aSpec[Order] || 0) - (bSpec[Order] || 0);
-  } else {
-    return 0;
+    Id,
+    PseudoElements,
+    ClassName,
+    Order,
+  ]) {
+    const difference = rank(aSpec, slot) - rank(bSpec, slot);
+
+    if (difference !== 0) {
+      return difference;
+    }
   }
+
+  return 0;
 };

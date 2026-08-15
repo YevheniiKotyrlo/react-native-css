@@ -2,10 +2,15 @@ import { Appearance, Dimensions } from "react-native";
 
 import { inspect } from "node:util";
 
-import { compile, type CompilerOptions } from "react-native-css/compiler";
+import {
+  compile,
+  type CompilerOptions,
+  type ReactNativeCssStyleSheet,
+} from "react-native-css/compiler";
 import { StyleCollection } from "react-native-css/native";
 import { resetVariableRegistries } from "react-native-css/native-internal";
 
+import { serializeStyleSheet } from "../metro/injection-code";
 import { colorScheme, dimensions } from "../native/reactivity";
 
 declare global {
@@ -52,9 +57,25 @@ export function registerCSS(
     );
   }
 
-  StyleCollection.inject(compiled.stylesheet());
+  StyleCollection.inject(injectableStyleSheet(compiled.stylesheet()));
 
   return compiled;
+}
+
+/**
+ * A stylesheet in the shape a device receives.
+ *
+ * Metro writes the stylesheet into the bundle as JSON source text and the
+ * bundler's parser reads it back; `JSON.parse` stands in for that parser. A test
+ * that injected the compiler's own object would be asserting against values -
+ * `undefined` in particular - that no device can hold.
+ */
+function injectableStyleSheet(
+  stylesheet: ReactNativeCssStyleSheet,
+): ReactNativeCssStyleSheet {
+  return JSON.parse(
+    serializeStyleSheet(stylesheet),
+  ) as ReactNativeCssStyleSheet;
 }
 
 export function compileWithAutoDebug(

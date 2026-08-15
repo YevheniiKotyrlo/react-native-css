@@ -18,6 +18,14 @@ import {
 } from "../reactivity";
 // import { testAttributes } from "./attributes";
 import type { RenderGuard } from "./guards";
+import {
+  conjoin,
+  disjoin,
+  matches,
+  negate,
+  UNKNOWN,
+  type Truth,
+} from "./kleene";
 
 export const DEFAULT_CONTAINER_NAME = "c:___default___";
 
@@ -52,7 +60,10 @@ export function testContainerQuery(
   // }
 
   // Only a definite `true` matches — see the three-valued logic below.
-  if (query.m && testContainerMediaCondition(query.m, container, get) !== true) {
+  if (
+    query.m &&
+    !matches(testContainerMediaCondition(query.m, container, get))
+  ) {
     return false;
   }
 
@@ -87,7 +98,7 @@ function testContainerPseudoCondition(
  * `./media-query.ts`; `@container` uses the same condition language and gets the
  * same logic so the two cannot disagree about a shared operator again.
  */
-type ContainerVerdict = boolean | undefined;
+type ContainerVerdict = Truth;
 
 function testContainerMediaCondition(
   condition: MediaCondition,
@@ -96,39 +107,25 @@ function testContainerMediaCondition(
 ): ContainerVerdict {
   switch (condition[0]) {
     case "?":
-      return undefined;
-    case "!": {
-      const verdict = testContainerMediaCondition(
-        condition[1],
-        containerKey,
-        get,
+      return UNKNOWN;
+    case "!":
+      return negate(
+        testContainerMediaCondition(condition[1], containerKey, get),
       );
-      return verdict === undefined ? undefined : !verdict;
-    }
-    case "&": {
-      let unknown = false;
-      for (const query of condition[1]) {
-        const verdict = testContainerMediaCondition(query, containerKey, get);
-        if (verdict === false) return false;
-        if (verdict === undefined) unknown = true;
-      }
-      return unknown ? undefined : true;
-    }
-    case "|": {
-      let unknown = false;
-      for (const query of condition[1]) {
-        const verdict = testContainerMediaCondition(query, containerKey, get);
-        if (verdict === true) return true;
-        if (verdict === undefined) unknown = true;
-      }
-      return unknown ? undefined : false;
-    }
+    case "&":
+      return conjoin(condition[1], (query) =>
+        testContainerMediaCondition(query, containerKey, get),
+      );
+    case "|":
+      return disjoin(condition[1], (query) =>
+        testContainerMediaCondition(query, containerKey, get),
+      );
     case "!!": {
       // MQ5 §2.4.3 boolean context. A container's size features are all
       // numeric, so the "false" value is zero — a container with no width does
       // not satisfy `@container (width)`.
       const value = getContainerFeatureValue(condition[1], containerKey, get);
-      return value === undefined ? undefined : value !== 0;
+      return value === undefined ? UNKNOWN : value !== 0;
     }
     case "[]": {
       // `(400px < width < 800px)`. The START comparison reads with the feature
@@ -137,14 +134,16 @@ function testContainerMediaCondition(
       const value = getContainerFeatureValue(name, containerKey, get);
 
       if (value === undefined) {
-        return undefined;
+        return UNKNOWN;
       }
 
-      if (
-        typeof value !== "number" ||
-        typeof start !== "number" ||
-        typeof end !== "number"
-      ) {
+      // A bound the runtime cannot order is unknown, never false — false is
+      // what a negation turns into a match.
+      if (typeof start !== "number" || typeof end !== "number") {
+        return UNKNOWN;
+      }
+
+      if (typeof value !== "number") {
         return false;
       }
 
@@ -162,15 +161,30 @@ function testContainerMediaCondition(
       const right = condition[2];
 
       if (left === undefined) {
-        return undefined;
+        return UNKNOWN;
+      }
+
+      // Before the equality shortcut: `null` is the compiler's marker for an
+      // operand it could not resolve, and comparing it for equality would
+      // answer a definite `false` that a negation turns into a match.
+      if (right === null) {
+        return UNKNOWN;
       }
 
       if (condition[0] === "=") {
         return left === right;
       }
 
+      // An operand that is a length the compiler could not fold reaches here as
+      // a descriptor rather than a number: `(width > 10em)` compiles to
+      // `[{}, "em", 10, 1]`, because `em` is relative to the element's own font
+      // size. `px` folds to a number and `rem` folds against `inlineRem`, so
+      // this arm carries ordinary CSS rather than a malformed prelude.
+      // Ordering an operand the runtime cannot resolve gives `NaN`, which is
+      // false for every operator - and false is the one answer a negation turns
+      // into a match.
       if (typeof left !== "number" || typeof right !== "number") {
-        return false;
+        return UNKNOWN;
       }
 
       // Each operator compares in its OWN direction. All four used to return
@@ -180,7 +194,7 @@ function testContainerMediaCondition(
     }
     default:
       condition satisfies never;
-      return undefined;
+      return UNKNOWN;
   }
 }
 

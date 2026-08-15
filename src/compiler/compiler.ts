@@ -60,8 +60,8 @@ const isAbsoluteUnit = (
  * @nativeMapping-typo"), and any malformed `url()` whose path contains
  * `react-native`.
  */
-const OWN_AT_RULE_WARNINGS = /^Unknown at rule: @(nativeMapping|react-native)$/u;
-
+const OWN_AT_RULE_WARNINGS =
+  /^Unknown at rule: @(nativeMapping|react-native)$/u;
 
 /**
  * Surface what lightningcss recovered from.
@@ -510,21 +510,48 @@ function extractMedia(
 
   const compiled = media.map((m) => parseMediaQuery(m, builder));
 
-  // A comma-separated media query list is a union, so a branch that cannot
-  // match contributes nothing while the others still apply. When no branch can
-  // match, neither can the block, and its rules must not be emitted at all —
-  // emitting them with no media query applies them everywhere instead.
+  // A comma-separated media query list is a UNION — the block applies when ANY
+  // one query matches — while `addMediaQuery` composes with the conditions of
+  // an enclosing rule, which INTERSECT. So a list of two or more is combined
+  // here into one `["|", …]` term; adding each branch separately would AND
+  // them, and `@media (width < 400px), (width > 800px)` would match nothing.
   if (compiled.every(({ type }) => type === "never")) {
+    // No branch can match, so neither can the block, and its rules must not be
+    // emitted at all — emitting them with no media query applies them
+    // everywhere instead.
     return;
   }
 
-  for (const query of compiled) {
-    if (query.type === "condition") {
-      builder.addMediaQuery(query.condition);
-    }
+  if (compiled.some(({ type }) => type === "always")) {
+    // One branch of a union that always applies settles the union, so the
+    // block carries no condition — `@media all, (width > 400px)` is `@media
+    // all`, and adding the other branch would narrow it to that branch.
+    return extractMediaRules(mediaRule, builder, mapping);
   }
 
-  // Iterate over all rules in the mediaRule and extract their styles using the updated CompilerCollection
+  // A branch that cannot match contributes nothing to the union while the
+  // others still apply.
+  const conditions = compiled.flatMap((query) =>
+    query.type === "condition" ? [query.condition] : [],
+  );
+
+  const [firstCondition, ...remainingConditions] = conditions;
+
+  if (firstCondition) {
+    builder.addMediaQuery(
+      remainingConditions.length === 0 ? firstCondition : ["|", conditions],
+    );
+  }
+
+  extractMediaRules(mediaRule, builder, mapping);
+}
+
+/** The block's own rules, once its prelude has been decided. */
+function extractMediaRules(
+  mediaRule: MediaRule,
+  builder: StylesheetBuilder,
+  mapping: StyleRuleMapping,
+) {
   for (const rule of mediaRule.rules) {
     extractRule(rule, builder, mapping);
   }
@@ -609,21 +636,14 @@ function parsePropertyInitialValue(
     case "length-percentage":
       return parseLength(component.value, builder);
     case "token-list":
-      return reduceParseUnparsed(
-        component.value,
-        builder,
-        "@property",
-        false,
-      );
+      return reduceParseUnparsed(component.value, builder, "@property", false);
     case "custom-ident":
     case "literal":
       return component.value;
     case "repeated": {
       const results = component.value.components
         .map((c) => parsePropertyInitialValue(c, builder))
-        .filter(
-          (v): v is NonNullable<StyleDescriptor> => v !== undefined,
-        );
+        .filter((v): v is NonNullable<StyleDescriptor> => v !== undefined);
       // Unwrap single-child repeated values so downstream consumers get a
       // scalar instead of a 1-element array. For example, `<length>+` with
       // initial-value `10px` should produce the same shape as `<length>`.

@@ -11,12 +11,20 @@ import {
   colorScheme,
   highContrast,
   invertedColors,
-  reduceMotion,
   reducedTransparency,
+  reduceMotion,
   vh,
   vw,
   type Getter,
 } from "../reactivity";
+import {
+  conjoin,
+  disjoin,
+  matches,
+  negate,
+  UNKNOWN,
+  type Truth,
+} from "./kleene";
 
 /**
  * Whether the platform's primary pointer is a fine, hover-capable one. The
@@ -25,6 +33,13 @@ import {
  * once rather than per query.
  */
 const POINTER_IS_FINE = Platform.OS === "macos" || Platform.OS === "windows";
+
+/**
+ * Bits per colour component. React Native renders to an 8-bit-per-channel
+ * surface on every platform it supports, and MQ5 11.1 measures the component
+ * rather than the pixel — so this is 8 rather than 24.
+ */
+const COLOR_DEPTH = 8;
 
 /**
  * `undefined` means UNKNOWN — the feature is not implemented here — and is not
@@ -36,49 +51,31 @@ const POINTER_IS_FINE = Platform.OS === "macos" || Platform.OS === "windows";
  * an unrecognised feature makes the query fail to match, in either polarity, so
  * unknown propagates through `!` instead of flipping.
  */
-type MediaVerdict = boolean | undefined;
+type MediaVerdict = Truth;
 
 export function testMediaQuery(
   mediaQueries: MediaCondition[],
   get: Getter,
 ): boolean {
   // Only a definite `true` matches, so an unknown feature never applies a rule.
-  return mediaQueries.every((query) => test(query, get) === true);
+  return mediaQueries.every((query) => matches(test(query, get)));
 }
 
 function test(mediaQuery: MediaCondition, get: Getter): MediaVerdict {
   switch (mediaQuery[0]) {
     case "?":
       // A condition the compiler could not represent. Unknown, never a match.
-      return undefined;
+      return UNKNOWN;
     case "!!":
       return testBooleanContext(mediaQuery[1], get);
     case "[]":
       return testInterval(mediaQuery, get);
-    case "!": {
-      const verdict = test(mediaQuery[1], get);
-      return verdict === undefined ? undefined : !verdict;
-    }
-    case "&": {
-      // Kleene AND: one definite `false` settles it; otherwise an unknown
-      // anywhere makes the whole condition unknown.
-      let unknown = false;
-      for (const query of mediaQuery[1]) {
-        const verdict = test(query, get);
-        if (verdict === false) return false;
-        if (verdict === undefined) unknown = true;
-      }
-      return unknown ? undefined : true;
-    }
-    case "|": {
-      let unknown = false;
-      for (const query of mediaQuery[1]) {
-        const verdict = test(query, get);
-        if (verdict === true) return true;
-        if (verdict === undefined) unknown = true;
-      }
-      return unknown ? undefined : false;
-    }
+    case "!":
+      return negate(test(mediaQuery[1], get));
+    case "&":
+      return conjoin(mediaQuery[1], (query) => test(query, get));
+    case "|":
+      return disjoin(mediaQuery[1], (query) => test(query, get));
     case ">":
     case ">=":
     case "<":
@@ -91,7 +88,7 @@ function test(mediaQuery: MediaCondition, get: Getter): MediaVerdict {
       // silently evaluating to unknown. `container-query.ts` and `compare()`
       // both carry the same assertion.
       mediaQuery satisfies never;
-      return undefined;
+      return UNKNOWN;
   }
 }
 
@@ -148,6 +145,11 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
       return get(highContrast) ? "more" : "no-preference";
     case "orientation":
       return get(vh) < get(vw) ? "landscape" : "portrait";
+    // MQ5 11.1. Every React Native surface is a colour display, and the value
+    // counts bits per colour COMPONENT rather than per pixel — so `(color)` is
+    // true in a boolean context and `(min-color: 8)` is the honest floor.
+    case "color":
+      return COLOR_DEPTH;
     case "aspect-ratio":
       // MQ4 §4.1: width divided by height. Both are already tracked, and the
       // `@container` evaluator computes the container's ratio from exactly the
@@ -190,7 +192,7 @@ function testBooleanContext(name: string, get: Getter): MediaVerdict {
   const current = resolveFeature(name, get);
 
   if (current === undefined) {
-    return undefined;
+    return UNKNOWN;
   }
 
   const falseValue = BOOLEAN_FALSE_VALUE[name];
@@ -211,20 +213,21 @@ function testInterval(
   const current = resolveFeature(name, get);
 
   if (current === undefined) {
-    return undefined;
+    return UNKNOWN;
   }
 
-  if (
-    typeof current !== "number" ||
-    typeof start !== "number" ||
-    typeof end !== "number"
-  ) {
+  // A bound the runtime cannot order is UNKNOWN rather than false, for the
+  // reason the comparison arm gives.
+  if (typeof start !== "number" || typeof end !== "number") {
+    return UNKNOWN;
+  }
+
+  if (typeof current !== "number") {
     return false;
   }
 
   return (
-    compare(startOperator, start, current) &&
-    compare(endOperator, current, end)
+    compare(startOperator, start, current) && compare(endOperator, current, end)
   );
 }
 
@@ -257,7 +260,14 @@ function testComparison(
   const current = resolveFeature(name, get);
 
   if (current === undefined) {
-    return undefined;
+    return UNKNOWN;
+  }
+
+  // Before the discrete-feature branch: `null` marks an operand the compiler
+  // could not resolve, and equality against it is a definite `false` that a
+  // negation turns into a match.
+  if (value === null) {
+    return UNKNOWN;
   }
 
   if (typeof current === "string") {
@@ -266,7 +276,18 @@ function testComparison(
     return mediaQuery[0] === "=" ? current === value : false;
   }
 
-  if (typeof current !== "number" || typeof value !== "number") {
+  // An operand the runtime cannot order is UNKNOWN, never false — false is the
+  // one answer a negation turns into a match. `null` is the compiler's marker
+  // for a value it could not resolve, and a descriptor is a length it could not
+  // FOLD: `(width > 10em)` compiles to `[{}, "em", 10, 1]`, because `em` is
+  // relative to the element's own font size. Both are ordinary CSS the runtime
+  // has no number for, rather than a malformed prelude. `container-query.ts`
+  // answers the same way.
+  if (typeof value !== "number") {
+    return UNKNOWN;
+  }
+
+  if (typeof current !== "number") {
     return false;
   }
 

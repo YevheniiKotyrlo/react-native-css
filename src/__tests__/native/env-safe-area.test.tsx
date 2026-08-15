@@ -463,7 +463,9 @@ test("the `and` env() condition compiles to a null feature value", () => {
       "&",
       [
         [">=", "width", 1],
-        [">=", "width", undefined],
+        // `null`, not `undefined`: the marker has to survive `JSON.stringify`
+        // on the way into a bundle, and a hole inside an array does not.
+        [">=", "width", null],
       ],
     ],
   ]);

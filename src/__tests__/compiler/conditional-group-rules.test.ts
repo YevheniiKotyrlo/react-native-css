@@ -43,12 +43,20 @@ const uncompilable: [label: string, css: string][] = [
   ],
 ];
 
-describe("a block whose condition does not compile is not emitted", () => {
+describe("a block whose condition does not compile keeps its condition", () => {
   test.each(uncompilable)("%s", (_label, css) => {
-    // Emitting the rule with no condition is worse than emitting nothing: the
-    // declarations then apply to every element that carries the class, which
-    // is the opposite of what the author wrote.
-    expect(compileChildRules(css)).toStrictEqual([]);
+    // Emitting the rule with NO condition is the failure this guards: the
+    // declarations would then apply to every element carrying the class, which
+    // is the opposite of what the author wrote. Dropping the block is the other
+    // way to avoid that and is not what happens — every prelude form compiles
+    // to a term, an unresolved operand as `null` and an unrepresentable form as
+    // `["?"]`, and the runtime answers the term unknown. So the rule is emitted
+    // and it carries something to refuse; `native/media-unknown.test.tsx` and
+    // `native/container-style-query.test.tsx` are where the refusal is read.
+    const rules = compileChildRules(css);
+
+    expect(rules).toHaveLength(1);
+    expect(rules[0]?.m ?? rules[0]?.cq).toBeDefined();
   });
 });
 

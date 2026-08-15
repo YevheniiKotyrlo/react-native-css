@@ -443,14 +443,14 @@ test("an env() feature value makes the rule unmatchable", () => {
   // not merely match too often, it carried no condition to evaluate and nothing
   // downstream could ever suppress it.
   //
-  // The condition is now the `["?"]` marker: present, and unknown. At the ROOT
-  // of a block's condition that settles the whole block, so nothing is emitted
-  // at all — an unmatchable rule that never ships is the same render and one
-  // fewer rule. The marker itself is still what a NESTED position carries, and
-  // the interval test below is where it is observed.
+  // The condition keeps its slot: an operand the compiler could not resolve is
+  // `null`, and a form it cannot represent at all is the `["?"]` marker. Either
+  // way the term is PRESENT and the runtime answers it unknown, which is not
+  // the same as a block that was never emitted — a prelude that vanishes is the
+  // shape this test exists to keep out.
   expect(
     conditionFor("(forced-colors: env(safe-area-inset-top))"),
-  ).toBeUndefined();
+  ).toStrictEqual([["=", "forced-colors", null]]);
   expect(applies("(forced-colors: env(safe-area-inset-top))")).toBe(false);
   expect(applies("(monochrome: env(safe-area-inset-top))")).toBe(false);
   // Including on `prefers-color-scheme`, the one feature that otherwise works.
