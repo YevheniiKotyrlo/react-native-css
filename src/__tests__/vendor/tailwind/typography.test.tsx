@@ -326,11 +326,17 @@ describe("Typography - Text Color", () => {
     });
   });
   test("text-inherit", async () => {
-    // `color: inherit` resolves through `__rn-css-color`, the variable every
-    // colour rule publishes for its subtree — the same one `currentcolor`
-    // reads. With no ancestor colour it lands on the root seed.
+    // Per CSS Color, `inherit` on the `color` property is defined as
+    // `currentcolor`, so text-inherit resolves to the platform label color —
+    // identical to text-current above — instead of being dropped with a warning.
     expect(await renderCurrentTest()).toStrictEqual({
-      props: { style: { color: { semantic: ["label", "labelColor"] } } },
+      props: {
+        style: {
+          color: {
+            semantic: ["label", "labelColor"],
+          },
+        },
+      },
     });
   });
 });

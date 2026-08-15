@@ -182,8 +182,6 @@ export function applyDeclarations(
   topLevelTarget = target,
   resolvedVariables: Record<string, ResolvedVariable> = {},
 ) {
-  const originalTarget = target;
-
   /**
    * The placeholder a `transform` declaration parked, if a transform-key
    * declaration later took `target.transform` over to park its own.
@@ -191,11 +189,24 @@ export function applyDeclarations(
   let displacedTransform: unknown;
 
   for (const declaration of declarations) {
-    target = originalTarget;
+    /**
+     * The object THIS declaration writes to.
+     *
+     * Scoped to the iteration. The delayed and transform closures below
+     * capture it, and they run after every declaration has been walked — so a
+     * binding shared across iterations hands them whatever nested object the
+     * LAST declaration ended on (a shadow, a transform entry) instead of the
+     * target this declaration resolved. The placeholder then never matches,
+     * and `{ [prop]: true }` is left in the style: `-webkit-line-clamp:
+     * var(--n); color: var(--c)` delivered `numberOfLines: {numberOfLines:
+     * true}`, and the same two declarations in the opposite order delivered
+     * `style.color: {color: true}`.
+     */
+    let declarationTarget = target;
 
     if (!Array.isArray(declaration)) {
       // Static styles
-      Object.assign(target, declaration);
+      Object.assign(declarationTarget, declaration);
     } else {
       // Dynamic styles
       let value: any = declaration[0];
@@ -214,7 +225,7 @@ export function applyDeclarations(
         if (final) {
           if (first !== "&") {
             topLevelTarget[first] ??= {};
-            target = topLevelTarget[first];
+            declarationTarget = topLevelTarget[first];
           }
 
           let previousProp: string | number = first;
@@ -226,19 +237,19 @@ export function applyDeclarations(
 
               if (!Array.isArray(previousTarget[previousProp])) {
                 previousTarget[previousProp] = [];
-                target = previousTarget[previousProp];
+                declarationTarget = previousTarget[previousProp];
               }
             }
-            previousTarget = target;
+            previousTarget = declarationTarget;
             previousProp = prop;
 
-            target[prop] ??= {};
-            target = target[prop];
+            declarationTarget[prop] ??= {};
+            declarationTarget = declarationTarget[prop];
           }
 
           prop = final;
         } else {
-          target = topLevelTarget;
+          declarationTarget = topLevelTarget;
           prop = first;
         }
       } else {
@@ -246,26 +257,6 @@ export function applyDeclarations(
       }
 
       const shouldDelay = declaration[2];
-
-      /**
-       * The object THIS declaration writes to.
-       *
-       * `target` is one binding shared by every iteration: it is reset to
-       * `originalTarget` at the top of the loop and an array `propPath` moves
-       * it elsewhere — to `topLevelTarget` for a mapped PROP, or to a nested
-       * object for a deep path. A deferred callback runs after the whole loop,
-       * so reading `target` from inside one reads whatever the LAST declaration
-       * left behind rather than the object this declaration resolved. Both
-       * halves of the swap then land on the wrong object: the read-back fails
-       * to recognise the placeholder, so the resolved value is never written
-       * and the placeholder ships as the value.
-       *
-       * Without it, `-webkit-line-clamp: var(--n); color: var(--c)` delivers
-       * `numberOfLines: {numberOfLines: true}`, and the same two declarations
-       * in the opposite order deliver `style.color: {color: true}` — the fault
-       * is the shared binding, not the prop side of it.
-       */
-      const declarationTarget = target;
 
       if (shouldDelay || transformKeys.has(prop)) {
         /**
