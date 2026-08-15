@@ -1,6 +1,6 @@
 /* eslint-disable  */
 import { useContext, useState, type ComponentType } from "react";
-import { Appearance } from "react-native";
+import { Appearance, DeviceEventEmitter } from "react-native";
 
 import { VariableContext } from "react-native-css/native-internal";
 
@@ -74,10 +74,40 @@ export const colorScheme: ColorScheme = {
     return colorSchemeObs.get() ?? Appearance.getColorScheme() ?? "light";
   },
   set(value) {
-    // Both readers, in one call: useColorScheme() reads Appearance, the class layer
-    // reads the observable. Moving one without the other splits the app's own UI
+    // Every reader, in one call. There are three, and they are three separate
+    // channels: the class layer reads the observable, useColorScheme() reads
+    // Appearance's cache, and every store built the documented way is wired to
+    // Appearance.addChangeListener. Moving one without the others splits the
+    // app's own UI
+    const previous = Appearance.getColorScheme();
     Appearance.setColorScheme(value);
     colorSchemeObs.set(value);
+
+    // RN's setColorScheme assigns the cache and calls the native module; the
+    // only eventEmitter.emit("change") in Libraries/Utilities/Appearance.js is
+    // inside the `appearanceChanged` handler. So a write the platform does not
+    // echo back moves getColorScheme() and notifies nobody. Announce it on the
+    // same device event the platform uses, so Appearance itself performs the
+    // cache write and the emit exactly as it does for an OS change.
+    //
+    // The announcement carries the REQUESTED scheme rather than a read of the
+    // cache, because what that cache holds at this point differs across the
+    // supported range: from 0.86 it is the requested value, and before that it
+    // is a read-back of the native module, which is stale on both platforms —
+    // Android posts the night-mode switch to the UI thread, iOS never assigns
+    // _currentColorScheme in the setter. Reading it back would make this an
+    // announcement on one react-native and a no-op on another.
+    //
+    // Only a resolved scheme is announced. Every other member of
+    // ColorSchemeName is a hand-back rather than a scheme — null and undefined
+    // before 0.86, the literal "unspecified" from 0.86 on — and only the OS
+    // knows what one resolves to. Announcing it would put a value in
+    // Appearance's cache that no reader can render; the platform's own echo
+    // delivers the resolved scheme instead, exactly as it does for an OS
+    // change. `previous` keeps a set of the scheme already in force silent.
+    if ((value === "dark" || value === "light") && value !== previous) {
+      DeviceEventEmitter.emit("appearanceChanged", { colorScheme: value });
+    }
   },
 };
 
