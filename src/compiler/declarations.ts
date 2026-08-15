@@ -67,18 +67,38 @@ type Parser<T extends Declaration["property"] = Declaration["property"]> = (
   // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
 ) => StyleDescriptor | void;
 
-/**
- * The properties whose deferred value is handed to a runtime resolver rather
- * than shipped as it resolves.
- *
- * Every shorthand belongs here. React Native has no array form for `margin` and
- * no keyword form for `flex`, so a shorthand left off this list reaches the
- * style object under its own key carrying a value React Native drops without
- * saying so. Each name is answered by a resolver of the same name in
- * `src/native/styles/shorthands/` — `toRNProperty` is what maps one to the
- * other, and a name with no resolver is dropped with a warning by
- * `resolveValue`.
- */
+// React Native only supports a uniform borderStyle, so per-side border
+// styles have no native equivalent and are dropped. "solid" is dropped
+// silently as it matches React Native's default rendering. A var() keeps the
+// value unknown at compile time, and an unknown value is not a known
+// non-solid one, so the unparsed path drops these as quietly.
+const unsupportedInlineStyles = new Set([
+  "border-inline-style",
+  "border-inline-start-style",
+  "border-inline-end-style",
+]);
+
+// A var() keeps a logical-border shorthand on the unparsed path, where the
+// parsed parseBorderInline* never run and propertyRename only maps longhands.
+// These are the inline-axis shorthands React Native can express, as the
+// [start, end] pair each expands to. The grammar is `<value>{1,2}`: one
+// component feeds both edges, two feed one edge each.
+const inlineAxisExpansion: Record<string, readonly [string, string]> = {
+  "border-inline-color": ["border-start-color", "border-end-color"],
+  "border-inline-width": ["border-start-width", "border-end-width"],
+};
+
+// The inline-axis shorthands React Native cannot express from one runtime
+// value: each packs width, style and colour into a single list, and no style
+// resolver fans one slot out to a per-edge pair. Warn rather than emit a
+// borderInline* prop React Native has no style attribute for. The parsed path
+// still expands these — lightningcss has already split the value there.
+const unsupportedInlineShorthands = new Set([
+  "border-inline",
+  "border-inline-start",
+  "border-inline-end",
+]);
+
 const unparsedRuntimeParsing = new Set([
   "animation",
   "font",
@@ -435,7 +455,7 @@ function parseWithParser(declaration: Declaration, builder: StylesheetBuilder) {
   if (declaration.property in parsers) {
     const parser = parsers[declaration.property] as Parser;
 
-    builder.descriptorProperty = declaration.property;
+    builder.descriptorProperties = [declaration.property];
 
     builder.setWarningProperty(declaration.property);
     const value = parser(declaration, builder, declaration.property);
@@ -704,9 +724,10 @@ function parseBorderInlineStart(
     "border-inline-start-width",
     parseBorderSideWidth(value.width, builder),
   );
-  builder.addDescriptor(
-    "border-inline-start-style",
+  dropUnsupportedInlineStyle(
     parseBorderStyle(value.style, builder),
+    builder,
+    "border-inline-start-style",
   );
 }
 
@@ -719,9 +740,10 @@ function parseBorderInlineEnd(
     "border-inline-end-width",
     parseBorderSideWidth(value.width, builder),
   );
-  builder.addDescriptor(
-    "border-inline-end-style",
+  dropUnsupportedInlineStyle(
     parseBorderStyle(value.style, builder),
+    builder,
+    "border-inline-end-style",
   );
 }
 
@@ -753,24 +775,98 @@ export function parseBorderInlineStyle(
   builder: StylesheetBuilder,
 ) {
   if (typeof declaration.value === "string") {
-    builder.addDescriptor(
-      declaration.property,
+    dropUnsupportedInlineStyle(
       parseBorderStyle(declaration.value, builder),
-    );
-  } else if (declaration.value.start === declaration.value.end) {
-    builder.addDescriptor(
+      builder,
       declaration.property,
-      parseBorderStyle(declaration.value.start, builder),
     );
   } else {
-    builder.addDescriptor(
-      "border-inline-start-style",
+    dropUnsupportedInlineStyle(
       parseBorderStyle(declaration.value.start, builder),
+      builder,
+      "border-inline-start-style",
     );
-    builder.addDescriptor(
-      "border-inline-end-style",
+    dropUnsupportedInlineStyle(
       parseBorderStyle(declaration.value.end, builder),
+      builder,
+      "border-inline-end-style",
     );
+  }
+}
+
+/**
+ * The top-level component values of an unparsed value. A component value is a
+ * preserved token, a function, or a block, so every entry here is already one
+ * — a var(), a calc(), a length, a colour. Whitespace is the only entry that
+ * is not, and lightningcss keeps it only sometimes: `var(--a) var(--b)` and
+ * `var(--a)var(--b)` both arrive as two bare var tokens, while `red var(--b)`
+ * keeps its separator. Dropping whitespace is what makes the two agree.
+ */
+function unparsedComponentValues(
+  tokenOrValues: TokenOrValue[],
+): TokenOrValue[] {
+  return tokenOrValues.filter(
+    (tokenOrValue) =>
+      !(
+        tokenOrValue.type === "token" &&
+        tokenOrValue.value.type === "white-space"
+      ),
+  );
+}
+
+/**
+ * Expand an inline-axis shorthand that a var() kept unparsed, the way
+ * parseBorderInline* expands the parsed form.
+ */
+function parseUnparsedInlineAxis(
+  tokenOrValues: TokenOrValue[],
+  [startProperty, endProperty]: readonly [string, string],
+  builder: StylesheetBuilder,
+  property: string,
+) {
+  const components = unparsedComponentValues(tokenOrValues);
+
+  if (components.length === 1) {
+    /**
+     * One component feeds both edges. descriptorProperties carries the pair so
+     * that light-dark(), which writes to the builder from inside parseUnparsed
+     * rather than through the returned value, reaches both edges of the single
+     * extra rule it opens.
+     */
+    builder.descriptorProperties = [startProperty, endProperty];
+
+    const value = parseUnparsed(components[0], builder, property);
+
+    builder.addDescriptor(startProperty, value);
+    builder.addDescriptor(endProperty, value);
+    return;
+  }
+
+  if (components.length === 2) {
+    builder.descriptorProperties = [startProperty];
+    builder.addDescriptor(
+      startProperty,
+      parseUnparsed(components[0], builder, property),
+    );
+
+    builder.descriptorProperties = [endProperty];
+    builder.addDescriptor(
+      endProperty,
+      parseUnparsed(components[1], builder, property),
+    );
+    return;
+  }
+
+  builder.addWarning("value", `${components.length} values (expected 1 or 2)`);
+}
+
+function dropUnsupportedInlineStyle(
+  style: string | undefined,
+  builder: StylesheetBuilder,
+  property: string,
+) {
+  if (style !== undefined && style !== "solid") {
+    builder.addWarning("style", property, style);
   }
 }
 
@@ -1443,6 +1539,19 @@ export function parseUnparsedDeclaration(
     return;
   }
 
+  if (unsupportedInlineShorthands.has(property)) {
+    builder.addWarning("property", property);
+    return;
+  }
+
+  // Nothing is lost that React Native could have rendered: the whole property
+  // has no native attribute, at any value. Warning here would fire on every
+  // Tailwind v4 border-{x,s,e}-* utility, which emits `var(--tw-border-style)`
+  // defaulting to the `solid` the parsed path drops without a word.
+  if (unsupportedInlineStyles.has(property)) {
+    return;
+  }
+
   builder.setWarningProperty(property);
 
   if (
@@ -1464,6 +1573,17 @@ export function parseUnparsedDeclaration(
     property = rename;
   }
 
+  const inlineAxis = inlineAxisExpansion[property];
+  if (inlineAxis) {
+    parseUnparsedInlineAxis(
+      declaration.value.value,
+      inlineAxis,
+      builder,
+      property,
+    );
+    return;
+  }
+
   if (unparsedNoRuntimeForm.has(property)) {
     return;
   }
@@ -1471,7 +1591,7 @@ export function parseUnparsedDeclaration(
   /**
    * Unparsed shorthand properties need to be parsed at runtime
    */
-  builder.descriptorProperty = property;
+  builder.descriptorProperties = [property];
 
   if (unparsedRuntimeParsing.has(property)) {
     const args = parseUnparsed(declaration.value.value, builder, property);
@@ -3453,7 +3573,7 @@ export function parseBorderSideWidthDeclaration(
   builder: StylesheetBuilder,
 ) {
   builder.addDescriptor(
-    declaration.property,
+    propertyRename[declaration.property] ?? declaration.property,
     parseBorderSideWidth(declaration.value, builder),
   );
 }

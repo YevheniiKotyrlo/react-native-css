@@ -37,7 +37,6 @@ describe("Border - Border Width", () => {
         style: {
           borderStartWidth: 1,
           borderEndWidth: 1,
-          borderInlineStyle: "solid",
         },
       },
     });
@@ -55,14 +54,14 @@ describe("Border - Border Width", () => {
   test("border-s-1", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderStartWidth: 1, borderInlineStartStyle: "solid" },
+        style: { borderStartWidth: 1 },
       },
     });
   });
   test("border-e-1", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderEndWidth: 1, borderInlineEndStyle: "solid" },
+        style: { borderEndWidth: 1 },
       },
     });
   });
@@ -101,7 +100,6 @@ describe("Border - Border Width", () => {
         style: {
           borderStartWidth: 2,
           borderEndWidth: 2,
-          borderInlineStyle: "solid",
         },
       },
     });
@@ -119,14 +117,14 @@ describe("Border - Border Width", () => {
   test("border-s-2", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderStartWidth: 2, borderInlineStartStyle: "solid" },
+        style: { borderStartWidth: 2 },
       },
     });
   });
   test("border-e-2", async () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
-        style: { borderEndWidth: 2, borderInlineEndStyle: "solid" },
+        style: { borderEndWidth: 2 },
       },
     });
   });
@@ -236,6 +234,25 @@ describe("Border - Border Color", () => {
       warnings: {
         values: {
           "border-inline-color": "inherit",
+        },
+      },
+    });
+  });
+
+  // An arbitrary var() Tailwind cannot fold at build time (unlike --spacing)
+  // keeps `border-inline-color` on the compiler's unparsed path. Two
+  // definitions keep it off the single-definition inliner as well.
+  test("border-x-[color:var(--c)]", async () => {
+    expect(
+      await renderSimple({
+        className: "border-x-[color:var(--c)]",
+        extraCss: `:root { --c: red; } .redefine { --c: blue; }`,
+      }),
+    ).toStrictEqual({
+      props: {
+        style: {
+          borderStartColor: "red",
+          borderEndColor: "red",
         },
       },
     });
