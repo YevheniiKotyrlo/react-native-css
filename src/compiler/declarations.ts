@@ -43,6 +43,7 @@ import {
   containsStyleFunction,
   isStyleDescriptorArray,
   isStyleFunction,
+  narrowFontFamily,
 } from "../utilities";
 import type {
   StyleDescriptor,
@@ -979,10 +980,7 @@ function parseFont(
   { value }: DeclarationType<"font">,
   builder: StylesheetBuilder,
 ) {
-  builder.addDescriptor(
-    "font-family",
-    parseFontFamilyList(value.family, builder),
-  );
+  builder.addDescriptor("font-family", firstFontFamily(value.family));
   builder.addDescriptor(
     "line-height",
     parseLineHeight(value.lineHeight, builder),
@@ -1622,7 +1620,29 @@ export function parseUnparsedDeclaration(
       }
     }
   } else {
-    const value = parseUnparsed(declaration.value.value, builder, property);
+    let value = parseUnparsed(declaration.value.value, builder, property);
+
+    if (property === "font-family") {
+      /**
+       * The other half of `parseFontFamily`. A `font-family` LightningCSS could
+       * not type reaches here instead, and it is still one family to React
+       * Native - `font-family: Inter, Helvetica,` is a stack whichever parser
+       * saw it. Only a stack whose first usable entry is a `var()` survives to
+       * render, because that is the only value the compiler cannot read.
+       */
+      const narrowing = narrowFontFamily(value);
+
+      switch (narrowing.kind) {
+        case "family":
+          value = narrowing.family;
+          break;
+        case "none":
+          value = undefined;
+          break;
+        case "deferred":
+          break;
+      }
+    }
 
     builder.addDescriptor(property, value);
 
@@ -3631,42 +3651,22 @@ export function parseVerticalAlign(
   return undefined;
 }
 
-/**
- * `font-family`, narrowed to the ONE family React Native holds.
- *
- * `TextStyle.fontFamily` is a `string`, so the fallback stack CSS is built
- * around has no representation: `font-family: Inter, system-ui, sans-serif`
- * renders whatever the platform does when `Inter` is missing, rather than
- * falling back to `system-ui`.
- *
- * The first family is kept because it renders, and the rest are REPORTED,
- * because a narrowing nobody is told about is one an author debugs by
- * elimination. No build-time diagnostic can say whether the font exists — that
- * is a device fact — so the warning names what was dropped rather than
- * predicting the outcome.
- */
-function parseFontFamilyList(
-  families: readonly string[],
-  builder: StylesheetBuilder,
-): StyleDescriptor {
-  const [family, ...fallbacks] = families;
-
-  if (fallbacks.length > 0) {
-    // Attributed to whichever declaration is being parsed rather than to
-    // `font-family` by name: the `font` shorthand carries a family stack too,
-    // and naming a property the author did not write sends them to the wrong
-    // line. `parseWithParser` has already named the declaration.
-    builder.addWarning("value", fallbacks.join(", "));
-  }
-
-  return family;
+function parseFontFamily({
+  value,
+}: DeclarationType<"font-family">): StyleDescriptor {
+  return firstFontFamily(value);
 }
 
-function parseFontFamily(
-  { value }: DeclarationType<"font-family">,
-  builder: StylesheetBuilder,
-) {
-  return parseFontFamilyList(value, builder);
+/**
+ * React Native only allows one font family, so every path that produces
+ * `font-family` narrows the stack it was given. This one is reached when
+ * LightningCSS could type the declaration, which means every entry is a family
+ * name and the answer is always the first of them.
+ */
+function firstFontFamily(stack: readonly string[]): StyleDescriptor {
+  const narrowing = narrowFontFamily(stack);
+
+  return narrowing.kind === "family" ? narrowing.family : undefined;
 }
 
 export function parseLineHeightDeclaration(
