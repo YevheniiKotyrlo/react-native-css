@@ -1844,6 +1844,38 @@ export function parseCustomDeclaration(
   }
 }
 
+/**
+ * A `<ratio>` written as three tokens, e.g. `16 / 9`.
+ *
+ * Only a two-term ratio is one: anything longer that happens to contain a `/`
+ * is not a ratio and has no canonical form to normalise it to.
+ */
+function isRatioGroup(
+  group: readonly unknown[],
+): group is [number, "/", number] {
+  return (
+    group.length === 3 &&
+    typeof group[0] === "number" &&
+    group[1] === "/" &&
+    typeof group[2] === "number"
+  );
+}
+
+/**
+ * The same value `parseAspectRatio` produces for the same ratio.
+ *
+ * Whether a `<ratio>` reaches the runtime through the property parser or
+ * through this one is decided by whether the compiler folded the variable
+ * holding it, and that decision must not be visible in the value.
+ */
+function ratioDescriptor([width, , height]: [
+  number,
+  "/",
+  number,
+]): StyleDescriptor {
+  return width === height ? 1 : `${width}/${height}`;
+}
+
 export function reduceParseUnparsed(
   tokenOrValues: TokenOrValue[],
   builder: StylesheetBuilder,
@@ -1890,17 +1922,8 @@ export function reduceParseUnparsed(
       } else {
         return [first];
       }
-    } else if (
-      // This is a special case for <ratio> values
-      group.includes("/") &&
-      group.every((item) =>
-        typeof item === "string" && item === "/"
-          ? item
-          : typeof item === "number",
-      )
-    ) {
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string
-      return [group.join(" ")];
+    } else if (isRatioGroup(group)) {
+      return [ratioDescriptor(group)];
     } else {
       return [group];
     }
