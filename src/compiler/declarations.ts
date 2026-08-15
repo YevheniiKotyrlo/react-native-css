@@ -46,15 +46,18 @@ import {
   narrowFontFamily,
 } from "../utilities";
 import type {
+  MediaCondition,
   StyleDescriptor,
   StyleFunction,
-  StyleRule,
 } from "./compiler.types";
 import { parseEasingFunction, parseIterationCount } from "./keyframes";
 import { toRNProperty } from "./selector-builder";
 import { propertyRename, type StylesheetBuilder } from "./stylesheet";
 
 const CommaSeparator = Symbol("CommaSeparator");
+
+/** The condition an extra rule for a `light-dark()` dark branch is gated on. */
+const DARK_COLOR_SCHEME: MediaCondition = ["=", "prefers-color-scheme", "dark"];
 
 type DeclarationType<P extends Declaration["property"]> = Extract<
   Declaration,
@@ -2886,10 +2889,7 @@ export function parseColor(
     case "currentcolor":
       return inheritedColorLookup();
     case "light-dark": {
-      const extraRule: StyleRule = {
-        s: [],
-        m: [["=", "prefers-color-scheme", "dark"]],
-      };
+      const extraRule = builder.openExtraRule(DARK_COLOR_SCHEME);
 
       // The dark value must land on the SAME key the light value does.
       // `addUnnamedDescriptor` reads the ambient `descriptorProperty`, which for
@@ -2913,7 +2913,6 @@ export function parseColor(
         );
       }
 
-      builder.addExtraRule(extraRule);
       return parseColor(cssColor.light, builder, lightDarkTarget);
     }
     case "rgb": {
@@ -5083,15 +5082,13 @@ export function parseUnresolvedColor(
         ],
       ];
     case "light-dark": {
-      const extraRule = builder.extendRule({
-        m: [["=", "prefers-color-scheme", "dark"]],
-      });
+      const extraRule = builder.openExtraRule(DARK_COLOR_SCHEME);
+
       builder.addUnnamedDescriptor(
         reduceParseUnparsed(color.dark, builder, property, allowAuto, use),
         false,
         extraRule,
       );
-      builder.addExtraRule(extraRule);
       return reduceParseUnparsed(
         color.light,
         builder,
