@@ -336,44 +336,36 @@ export class StylesheetBuilder {
   }
 
   /**
-   * Merge an extra rule onto a rule about to be applied to a selector.
+   * The form an extra rule takes on its way to a selector.
    *
-   * The extra rule owns its content — its declarations, the variables they
-   * publish, and the flag saying they resolve late. Everything else is the
-   * applied rule's: its specificity, its pseudo classes, its container and
-   * attribute queries, and the media conditions the extra one is added to.
+   * The rule it was opened on supplies the SELECTOR — its specificity, its
+   * container query, and the media conditions the extra one is added to. The
+   * extra rule supplies the CONTENT, in full: its declarations, the variables
+   * they publish, and the flags they set. Neither half crosses over.
    *
-   * Both rules match under the extra condition and the extra one is applied
-   * last, so replacing rather than merging is what makes it win, and whatever
-   * it leaves out still arrives from the rule it copies.
+   * Pseudo classes and attribute queries are absent from that list because
+   * they are never on the rule this copies from. They are read off the
+   * selector by `applyRuleToSelectors` and written onto every rule it applies,
+   * this one included, so copying them here would be a second source for a
+   * value that already reaches the merged rule one step later.
+   *
+   * Content is never inherited, not even for a channel the extra rule leaves
+   * empty. The rule it was opened on matches under the extra condition too, so
+   * anything left out still arrives from there — while restating it makes the
+   * extra rule a second place that value is written, and being applied last it
+   * overwrites whatever an earlier extra rule on the same rule published.
    */
   private mergeExtraRule(rule: StyleRule, extraRule: StyleRule): StyleRule {
-    const merged = this.cloneRule(rule);
+    const merged = this.cloneRule(extraRule);
 
-    if (extraRule.m) {
-      merged.m ??= [];
-      merged.m.push(...extraRule.m);
+    merged.s = [...rule.s];
+
+    if (rule.m) {
+      merged.m = [...rule.m, ...(merged.m ?? [])];
     }
 
-    if (extraRule.d) {
-      merged.d = extraRule.d;
-    }
-
-    // The partial's published variables replace the base rule's, exactly as
-    // its descriptors do above. Both rules apply — the extra rule is an
-    // OVERRIDE layered on the base one — and the runtime assigns variables in
-    // rule order, so the last write wins.
-    //
-    // Without this the extra rule inherited the base rule's `v` wholesale,
-    // which is the light value. `light-dark(#333, #eee)` then rendered #eee on
-    // the element while publishing #333 to every descendant, so a nested
-    // <Text> took the LIGHT colour in dark mode.
-    if (extraRule.v) {
-      merged.v = extraRule.v;
-    }
-
-    if (extraRule.dv !== undefined) {
-      merged.dv = extraRule.dv;
+    if (rule.cq) {
+      merged.cq = [...rule.cq];
     }
 
     return merged;
@@ -908,126 +900,30 @@ export class StylesheetBuilder {
       this.options,
     );
 
+    /**
+     * One authored rule reports a scoping drop once, however many selectors it
+     * expands to and however many rules each of those receives — an extra rule
+     * carries the same declarations as the rule it was opened on, so it is
+     * scoped out of the same properties.
+     */
     const warnedPseudoElements = new Set<PseudoElement>();
 
+    /**
+     * The rules a selector receives: the current rule, and every extra rule
+     * opened on it already carrying the current rule's selector context. They
+     * are applied identically from here — a step the current rule takes and an
+     * extra rule skips is a step the selector never applied to it.
+     */
+    const extraRulesArray = extraRules.get(this.rule) ?? [];
+    const sourceRules = [
+      this.rule,
+      ...extraRulesArray.map((extraRule) =>
+        this.mergeExtraRule(this.rule, extraRule),
+      ),
+    ];
+
     for (const selector of normalizedSelectors) {
-      // We are going to be apply the current rule to n selectors, so we clone the rule
-      let rule: StyleRule | undefined = this.cloneRule(this.rule);
-
-      if (selector.type === "className" && selector.pseudoElementQuery) {
-        const pseudoElement = getPseudoElement(selector.pseudoElementQuery);
-
-        if (pseudoElement) {
-          const scoped = scopeRuleToPseudoElement(rule, pseudoElement);
-
-          // A supported property dropped for being in the wrong scope warns like an
-          // unsupported one, keyed by the pseudo-element it was scoped out of. Every
-          // selector scopes the same clone, so one authored rule reports once however
-          // many selectors it expands to
-          if (!warnedPseudoElements.has(pseudoElement)) {
-            warnedPseudoElements.add(pseudoElement);
-
-            for (const property of scoped.dropped) {
-              this.addWarning("style", `::${pseudoElement}`, property);
-            }
-          }
-
-          rule = scoped.rule;
-        }
-      }
-
-      if (!rule) {
-        continue;
-      }
-
-      if (selector.type === "className") {
-        const {
-          specificity,
-          className,
-          mediaQuery,
-          containerQuery,
-          pseudoClassesQuery,
-          attributeQuery,
-        } = selector;
-
-        if (!className) {
-          continue; // No className, nothing to do
-        }
-
-        // Combine the specificity of the selector with the rule's specificity
-        for (let i = 0; i < specificity.length; i++) {
-          const spec = specificity[i];
-          if (!spec) continue;
-          rule.s[i] = spec + (rule.s[i] ?? 0);
-        }
-
-        if (mediaQuery) {
-          rule.m ??= [];
-          rule.m.push(...mediaQuery);
-        }
-
-        if (containerQuery) {
-          rule.cq ??= [];
-          rule.cq.push(...containerQuery);
-
-          for (const query of containerQuery) {
-            const name = query.n;
-
-            if (typeof name !== "string") {
-              continue;
-            }
-
-            const [first, ...rest] = name.slice(2).split(".");
-
-            if (typeof first !== "string") {
-              continue;
-            }
-
-            const containerRule: StyleRule = {
-              // These are not "real" rules, so they use the lowest specificity
-              s: [0],
-              c: [name],
-            };
-
-            if (rest.length) {
-              // `~=` — Selectors 4 §6.1 makes a class selector a
-              // whitespace-separated TOKEN match, the same test the selector
-              // builder emits for a compound's extra classes. A substring test
-              // matches a class that merely CONTAINS this one.
-              containerRule.aq = rest.map((attr) => [
-                "a",
-                "className",
-                "~=",
-                attr,
-              ]);
-            }
-
-            // Create rules for the parent classes
-            this.addRuleToRuleSet(first, containerRule);
-          }
-        }
-
-        if (pseudoClassesQuery) {
-          rule.p = { ...rule.p, ...pseudoClassesQuery };
-        }
-
-        if (attributeQuery) {
-          rule.aq ??= [];
-          rule.aq.push(...attributeQuery);
-        }
-
-        this.addRuleToRuleSet(className, rule);
-
-        const extraRulesArray = extraRules.get(this.rule);
-        if (extraRulesArray) {
-          for (const extraRule of extraRulesArray) {
-            this.addRuleToRuleSet(
-              className,
-              this.mergeExtraRule(rule, extraRule),
-            );
-          }
-        }
-      } else {
+      if (selector.type !== "className") {
         // These can only have variable declarations
         if (!this.rule.v) {
           continue;
@@ -1049,6 +945,122 @@ export class StylesheetBuilder {
             this.shared[type][remName].push(variableValue);
           }
         }
+
+        continue;
+      }
+
+      const {
+        specificity,
+        className,
+        mediaQuery,
+        containerQuery,
+        pseudoClassesQuery,
+        attributeQuery,
+      } = selector;
+
+      if (!className) {
+        continue; // No className, nothing to do
+      }
+
+      // The parent classes a container query names describe the selector, not
+      // the rule, so they are registered once however many rules it receives.
+      let parentContainersRegistered = false;
+
+      for (const sourceRule of sourceRules) {
+        // We are going to be apply the rule to n selectors, so we clone the rule
+        let rule: StyleRule | undefined = this.cloneRule(sourceRule);
+
+        if (selector.pseudoElementQuery) {
+          const pseudoElement = getPseudoElement(selector.pseudoElementQuery);
+
+          if (pseudoElement) {
+            const scoped = scopeRuleToPseudoElement(rule, pseudoElement);
+
+            // A supported property dropped for being in the wrong scope warns like an
+            // unsupported one, keyed by the pseudo-element it was scoped out of.
+            if (!warnedPseudoElements.has(pseudoElement)) {
+              warnedPseudoElements.add(pseudoElement);
+
+              for (const property of scoped.dropped) {
+                this.addWarning("style", `::${pseudoElement}`, property);
+              }
+            }
+
+            rule = scoped.rule;
+          }
+        }
+
+        if (!rule) {
+          continue;
+        }
+
+        // Combine the specificity of the selector with the rule's specificity
+        for (let i = 0; i < specificity.length; i++) {
+          const spec = specificity[i];
+          if (!spec) continue;
+          rule.s[i] = spec + (rule.s[i] ?? 0);
+        }
+
+        if (mediaQuery) {
+          rule.m ??= [];
+          rule.m.push(...mediaQuery);
+        }
+
+        if (containerQuery) {
+          rule.cq ??= [];
+          rule.cq.push(...containerQuery);
+
+          if (!parentContainersRegistered) {
+            parentContainersRegistered = true;
+
+            for (const query of containerQuery) {
+              const name = query.n;
+
+              if (typeof name !== "string") {
+                continue;
+              }
+
+              const [first, ...rest] = name.slice(2).split(".");
+
+              if (typeof first !== "string") {
+                continue;
+              }
+
+              const containerRule: StyleRule = {
+                // These are not "real" rules, so they use the lowest specificity
+                s: [0],
+                c: [name],
+              };
+
+              if (rest.length) {
+                // `~=` — Selectors 4 §6.1 makes a class selector a
+                // whitespace-separated TOKEN match, the same test the selector
+                // builder emits for a compound's extra classes. A substring test
+                // matches a class that merely CONTAINS this one.
+                containerRule.aq = rest.map((attr) => [
+                  "a",
+                  "className",
+                  "~=",
+                  attr,
+                ]);
+              }
+
+              // Create rules for the parent classes
+              this.addRuleToRuleSet(first, containerRule);
+            }
+          }
+        }
+
+        if (pseudoClassesQuery) {
+          rule.p = { ...rule.p, ...pseudoClassesQuery };
+        }
+
+        if (attributeQuery) {
+          rule.aq ??= [];
+          rule.aq.push(...attributeQuery);
+        }
+
+        this.addRuleToRuleSet(className, rule);
       }
     }
   }
