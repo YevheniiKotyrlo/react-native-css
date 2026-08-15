@@ -4,11 +4,12 @@ import {
   AccessibilityInfo,
   Appearance,
   Dimensions,
-  type ColorSchemeName,
   type LayoutRectangle,
 } from "react-native";
 
 import type { StyleDescriptor } from "react-native-css/compiler";
+
+import type { ColorSchemeName } from "../runtime.types";
 
 export type Effect = {
   observers: Set<Effect>;

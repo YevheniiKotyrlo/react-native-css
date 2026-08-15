@@ -1,4 +1,4 @@
-import { Appearance, Dimensions } from "react-native";
+import { Dimensions } from "react-native";
 
 import { inspect } from "node:util";
 
@@ -10,6 +10,7 @@ import {
 import { StyleCollection } from "react-native-css/native";
 import { resetVariableRegistries } from "react-native-css/native-internal";
 
+import { setAppearanceColorScheme } from "../color-scheme";
 import { serializeStyleSheet } from "../metro/injection-code";
 import { colorScheme, dimensions } from "../native/reactivity";
 
@@ -28,7 +29,7 @@ beforeEach(() => {
   StyleCollection.styles.clear();
   resetVariableRegistries();
   dimensions.set(Dimensions.get("window"));
-  Appearance.setColorScheme(null);
+  setAppearanceColorScheme(null);
   colorScheme.set(null);
 });
 

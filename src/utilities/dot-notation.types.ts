@@ -1,4 +1,6 @@
 /* eslint-disable */
+import type { Component } from "react";
+
 // ---------- Base Utilities ----------
 
 type Falsy = undefined | null | false | "";
@@ -32,13 +34,12 @@ export type StyleProp<T> =
 type UnwrapRecursiveArray<
   T,
   Depth extends unknown[] = [],
-  MaxDepth extends number = 10
+  MaxDepth extends number = 10,
 > = Depth["length"] extends MaxDepth
   ? T
   : T extends (infer I)[]
     ? UnwrapRecursiveArray<I, [...Depth, unknown], MaxDepth>
     : T;
-
 
 // Remove null, false, undefined, etc.
 type RemoveFalsy<T> = Exclude<T, Falsy>;
@@ -51,13 +52,23 @@ type ExtractStyleObject<T> = RemoveRegisteredStyle<
   RemoveFalsy<UnwrapRecursiveArray<T extends StyleProp<infer U> ? U : T>>
 >;
 
-// Check if something is a non-array plain object
+// Check if something is a non-array plain object.
+//
+// A class component instance is not one. It is reachable only through a ref, it holds
+// its own props, and those props hold refs again, so the prop graph is cyclic. Walking
+// it yields paths that can never be a mapping target, and the path set grows
+// exponentially with depth: `ScrollViewProps["scrollViewRef"]` alone contributes 4,654
+// such paths on react-native 0.81, and from 0.83 the host instance surface is wide
+// enough that building the union overflows TypeScript's limit. Treating the instance as
+// a leaf cuts the cycle where it starts.
 type IsPlainObject<T> = T extends object
   ? T extends Function
     ? false
     : T extends readonly any[]
       ? false
-      : true
+      : T extends Component<any, any>
+        ? false
+        : true
   : false;
 
 // ---------- Resolve Path Type Helpers ----------

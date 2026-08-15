@@ -4,6 +4,7 @@ import { Appearance, DeviceEventEmitter } from "react-native";
 
 import { VariableContext } from "react-native-css/native-internal";
 
+import { setAppearanceColorScheme } from "../color-scheme";
 import type {
   ColorScheme,
   CustomPropertyValue,
@@ -80,7 +81,11 @@ export const colorScheme: ColorScheme = {
     // Appearance.addChangeListener. Moving one without the others splits the
     // app's own UI
     const previous = Appearance.getColorScheme();
-    Appearance.setColorScheme(value);
+    // Through the seam rather than straight at `Appearance`: `ColorSchemeName`
+    // is this package's own union now, and the one member the supported
+    // react-native range declares incompatibly — the "follow the system" write
+    // — is the reason that seam exists.
+    setAppearanceColorScheme(value);
     colorSchemeObs.set(value);
 
     // RN's setColorScheme assigns the cache and calls the native module; the
