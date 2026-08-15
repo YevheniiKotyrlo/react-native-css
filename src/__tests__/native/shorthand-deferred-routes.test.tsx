@@ -272,36 +272,39 @@ test("the block and inline box shorthands expand to their two edges on both rout
 
 test("the block-axis border shorthands expand to their two edges on both routes", () => {
   expectBothRoutesAgree([
+    // The block WIDTHS reach the physical edges. `borderBlockWidth` and its two
+    // per-edge twins are in `BaseViewConfig.ios.js` and nowhere else, so a
+    // width written to them paints on iOS Fabric and vanishes on Android and
+    // the old architecture; `direction` never flips this axis, so top and
+    // bottom carry it exactly rather than approximately.
     {
       property: "border-block-width",
       value: "1px 2px",
-      expected: { borderBlockStartWidth: 1, borderBlockEndWidth: 2 },
+      expected: { borderTopWidth: 1, borderBottomWidth: 2 },
     },
     {
       property: "border-block-width",
       value: "2px",
-      expected: { borderBlockWidth: 2 },
+      expected: { borderTopWidth: 2, borderBottomWidth: 2 },
     },
+    // Every per-edge STYLE drops on both axes. React Native has one
+    // `borderStyle` for the whole box at every layer, so there is no key for an
+    // edge to reach — and an inert CSS-spelled key in the style object reads
+    // exactly like a live declaration to everything downstream.
     {
       property: "border-block-style",
       value: "solid dashed",
-      expected: {
-        borderBlockStartStyle: "solid",
-        borderBlockEndStyle: "dashed",
-      },
+      expected: undefined,
     },
     {
       property: "border-inline-style",
       value: "solid dashed",
-      expected: {
-        borderInlineStartStyle: "solid",
-        borderInlineEndStyle: "dashed",
-      },
+      expected: undefined,
     },
     {
       property: "border-inline-style",
       value: "solid",
-      expected: { borderInlineStyle: "solid" },
+      expected: undefined,
     },
   ]);
 });
@@ -696,16 +699,20 @@ test("visibility and direction reach the keys React Native has, on both routes",
 });
 
 test("the border edge shorthands expand to their own edge's keys on both routes", () => {
-  // React Native has one `borderStyle` for the whole box, so a physical edge's
-  // style is read and discarded — `border-top: 2px solid red` sets a width and
-  // a colour and nothing else. The two logical AXIS shorthands keep their
-  // faithful CSS style key instead, because renaming an axis onto `borderStyle`
-  // would style the other two edges as well.
+  // React Native has one `borderStyle` for the whole box, so an edge's style is
+  // read and discarded — `border-top: 2px solid red` sets a width and a colour
+  // and nothing else. The two logical AXIS shorthands drop theirs for the same
+  // reason and not a different one: renaming an axis onto `borderStyle` would
+  // style the other two edges, and emitting the faithful CSS key would put a
+  // name no layer of React Native reads into the style object.
   //
-  // The inline axis has no axis-level key to collapse the width and colour
-  // onto, so each is written to both edges: `borderStartWidth` /
-  // `borderEndWidth` and `borderStartColor` / `borderEndColor` are React
-  // Native's own direction-aware spelling of `border-inline-start` / `-end`.
+  // Neither axis has an axis-level key to collapse the WIDTH onto, so each is
+  // written to both of its edges. The inline axis reaches `borderStartWidth` /
+  // `borderEndWidth` and `borderStartColor` / `borderEndColor`, React Native's
+  // own direction-aware spelling of `border-inline-start` / `-end`. The block
+  // axis reaches the physical top and bottom, which is exact because
+  // `direction` never flips it — and its COLOUR is the one part of the axis
+  // React Native does name, so that keeps `borderBlockColor`.
   expectBothRoutesAgree([
     {
       property: "border-top",
@@ -731,8 +738,8 @@ test("the border edge shorthands expand to their own edge's keys on both routes"
       property: "border-block",
       value: "2px solid #123456",
       expected: {
-        borderBlockWidth: 2,
-        borderBlockStyle: "solid",
+        borderTopWidth: 2,
+        borderBottomWidth: 2,
         borderBlockColor: "#123456",
       },
     },
@@ -742,7 +749,6 @@ test("the border edge shorthands expand to their own edge's keys on both routes"
       expected: {
         borderStartWidth: 2,
         borderEndWidth: 2,
-        borderInlineStyle: "solid",
         borderStartColor: "#123456",
         borderEndColor: "#123456",
       },

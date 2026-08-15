@@ -232,7 +232,6 @@ test("the inline border edges reach React Native's `borderStart*` / `borderEnd*`
         borderEndColor: "#f00",
         borderStartWidth: 2,
         borderEndWidth: 2,
-        borderInlineStyle: "solid",
       },
     ],
     [
@@ -252,43 +251,50 @@ test("the inline border edges reach React Native's `borderStart*` / `borderEnd*`
     ["border-inline-end-width: 2px", { borderEndWidth: 2 }],
     [
       "border-inline-start: 2px solid red",
-      {
-        borderStartColor: "#f00",
-        borderStartWidth: 2,
-        borderInlineStartStyle: "solid",
-      },
+      { borderStartColor: "#f00", borderStartWidth: 2 },
     ],
   ] as const) {
     expect([css, viewStyle(`.a { ${css} }`, "a")]).toStrictEqual([css, style]);
   }
 });
 
-test("the block axis keeps the key React Native has for it", () => {
-  // `borderBlockColor` IS a React Native style key, so the axis collapses onto
-  // it rather than writing two edges. `borderBlockWidth` is one too, though
-  // only iOS reads it.
+test("the block axis keeps the one key React Native has for it", () => {
+  // The COLOUR is that key: `borderBlockColor`, `borderBlockStartColor` and
+  // `borderBlockEndColor` are in `ReactNativeStyleAttributes`, in both
+  // `BaseViewConfig`s and in `ViewStyle`, so the axis collapses onto it rather
+  // than writing two edges.
   expect(viewStyle(`.a { border-block-color: red }`, "a")).toStrictEqual({
     borderBlockColor: "#f00",
   });
+
+  // The WIDTH is not. `borderBlockWidth` lives in `BaseViewConfig.ios.js` and
+  // nowhere else, so writing it paints on iOS Fabric and vanishes on Android
+  // and the old architecture — which is how Tailwind's `border-y-*` drew
+  // nothing there. `direction` never flips the block axis, so the physical top
+  // and bottom carry it on every platform, exactly rather than approximately.
   expect(viewStyle(`.a { border-block-width: 1px }`, "a")).toStrictEqual({
-    borderBlockWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
   });
 });
 
-test("a per-edge border style keeps its faithful CSS key", () => {
+test("a per-edge border style is dropped, on either axis", () => {
   // React Native's only border style is `borderStyle` and it applies to the
-  // whole box, so there is nothing for one axis or one edge to map to. The
-  // declaration is emitted as CSS spells it and is inert until React Native
-  // grows a key — which is the state a mapping to `borderStyle` could not
-  // reach, because it would style edges nobody asked for.
-  for (const [css, key] of [
-    ["border-inline-style: solid", "borderInlineStyle"],
-    ["border-block-style: solid", "borderBlockStyle"],
-    ["border-inline-start-style: solid", "borderInlineStartStyle"],
+  // whole box, so there is nothing for one axis or one edge to map to — and no
+  // layer of React Native reads a per-edge style name at all. Emitting the
+  // faithful CSS key would put a declaration into the style object that reads
+  // exactly like a live one and renders nothing, so the declaration drops and
+  // a non-`solid` value is warned about. Mapping onto `borderStyle` is the
+  // other thing this is not: it would style edges nobody asked for.
+  for (const css of [
+    "border-inline-style: solid",
+    "border-block-style: solid",
+    "border-inline-start-style: solid",
+    "border-block-end-style: solid",
   ] as const) {
     expect([css, viewStyle(`.a { ${css} }`, "a")]).toStrictEqual([
       css,
-      { [key]: "solid" },
+      undefined,
     ]);
   }
 });

@@ -76,6 +76,18 @@ const extraRules = new WeakMap<StyleRule, StyleRule[]>();
 export const propertyRename: Record<string, string> = {
   "background-image": "experimental_backgroundImage",
   "block-size": "height",
+  // React Native ships no border-block-* WIDTH on Android or the old
+  // architecture: ReactNativeStyleAttributes and BaseViewConfig.android.js
+  // both list the three block COLOURS and none of the widths, and ViewStyle
+  // declares only the colours. BaseViewConfig.ios.js is the outlier that
+  // carries them, which makes an unrenamed block width paint on iOS and
+  // nowhere else. The block axis is never flipped by `direction`, so
+  // block-start is the top edge and block-end the bottom one on every
+  // platform — the colours need no rename because RN already reads them.
+  "border-block-end-width": "border-bottom-width",
+  "border-block-start-width": "border-top-width",
+  // React Native has no border-inline-* props, but ships the equivalent
+  // RTL-aware border-start-* / border-end-* props
   "border-inline-end-color": "border-end-color",
   "border-inline-end-width": "border-end-width",
   "border-inline-start-color": "border-start-color",

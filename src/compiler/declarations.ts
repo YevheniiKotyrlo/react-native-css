@@ -71,12 +71,15 @@ type Parser<T extends Declaration["property"] = Declaration["property"]> = (
   // eslint-disable-next-line @typescript-eslint/no-invalid-void-type
 ) => StyleDescriptor | void;
 
-// React Native only supports a uniform borderStyle, so per-side border
+// React Native only supports a uniform borderStyle, so per-edge border
 // styles have no native equivalent and are dropped. "solid" is dropped
 // silently as it matches React Native's default rendering. A var() keeps the
 // value unknown at compile time, and an unknown value is not a known
 // non-solid one, so the unparsed path drops these as quietly.
-const unsupportedInlineStyles = new Set([
+const unsupportedEdgeStyles = new Set([
+  "border-block-style",
+  "border-block-start-style",
+  "border-block-end-style",
   "border-inline-style",
   "border-inline-start-style",
   "border-inline-end-style",
@@ -87,21 +90,17 @@ const unsupportedInlineStyles = new Set([
 // These are the inline-axis shorthands React Native can express, as the
 // [start, end] pair each expands to. The grammar is `<value>{1,2}`: one
 // component feeds both edges, two feed one edge each.
-const inlineAxisExpansion: Record<string, readonly [string, string]> = {
+//
+// The BLOCK axis is deliberately absent. Its two shorthands are in
+// `unparsedRuntimeParsing` instead, where `repeatShorthandHandler` splits the
+// resolved list across the two edges — an expansion here writes the whole
+// unresolved value to both edges, so `border-block-color: var(--pair)` would
+// hand each edge the pair rather than one colour, and the deferred route would
+// stop agreeing with the literal one.
+const axisExpansion: Record<string, readonly [string, string]> = {
   "border-inline-color": ["border-start-color", "border-end-color"],
   "border-inline-width": ["border-start-width", "border-end-width"],
 };
-
-// The inline-axis shorthands React Native cannot express from one runtime
-// value: each packs width, style and colour into a single list, and no style
-// resolver fans one slot out to a per-edge pair. Warn rather than emit a
-// borderInline* prop React Native has no style attribute for. The parsed path
-// still expands these — lightningcss has already split the value there.
-const unsupportedInlineShorthands = new Set([
-  "border-inline",
-  "border-inline-start",
-  "border-inline-end",
-]);
 
 const unparsedRuntimeParsing = new Set([
   "animation",
@@ -254,17 +253,17 @@ const parsers: {
   "border-block-end": parseBorderBlockEnd,
   "border-block-end-color": parseColorDeclaration,
   // The opposite edge of `border-block-start-style`, and reached the same two
-  // ways: written by hand, and written by `parseBorderBlockStyle` when the two
-  // edges of `border-block-style` disagree. Missing here, one edge of a
+  // ways: written by hand, and written by `parseUnsupportedEdgeStyle` when the
+  // two edges of `border-block-style` disagree. Missing here, one edge of a
   // symmetric pair compiled and the other was reported as a property this
   // library does not handle.
-  "border-block-end-style": parseBorderStyleDeclaration,
+  "border-block-end-style": parseUnsupportedEdgeStyle,
   "border-block-end-width": parseBorderSideWidthDeclaration,
   "border-block-start": parseBorderBlockStart,
   "border-block-start-color": parseColorDeclaration,
-  "border-block-start-style": parseBorderStyleDeclaration,
+  "border-block-start-style": parseUnsupportedEdgeStyle,
   "border-block-start-width": parseBorderSideWidthDeclaration,
-  "border-block-style": parseBorderBlockStyle,
+  "border-block-style": parseUnsupportedEdgeStyle,
   "border-block-width": parseBorderBlockWidth,
   "border-bottom": parseBorderSide,
   "border-bottom-color": parseColorDeclaration,
@@ -279,13 +278,13 @@ const parsers: {
   "border-inline-color": parseBorderColor,
   "border-inline-end": parseBorderInlineEnd,
   "border-inline-end-color": parseColorDeclaration,
-  "border-inline-end-style": parseBorderInlineStyle,
+  "border-inline-end-style": parseUnsupportedEdgeStyle,
   "border-inline-end-width": parseBorderSideWidthDeclaration,
   "border-inline-start": parseBorderInlineStart,
   "border-inline-start-color": parseColorDeclaration,
-  "border-inline-start-style": parseBorderInlineStyle,
+  "border-inline-start-style": parseUnsupportedEdgeStyle,
   "border-inline-start-width": parseBorderSideWidthDeclaration,
-  "border-inline-style": parseBorderInlineStyle,
+  "border-inline-style": parseUnsupportedEdgeStyle,
   "border-inline-width": parseBorderInlineWidth,
   "border-left": parseBorderSide,
   "border-left-color": parseColorDeclaration,
@@ -657,18 +656,28 @@ function parseBorderSide(
   );
 }
 
+// The block axis reaches React Native under two different spellings, and only
+// one of them is real. The three block COLOURS are style attributes on both
+// platforms, so they keep their own keys. The block WIDTHS live in
+// `BaseViewConfig.ios.js` and nowhere else — not in `ReactNativeStyleAttributes`,
+// not on Android, not in `ViewStyle` — so an emitted `borderBlockWidth` paints
+// on iOS Fabric and is dropped everywhere else. They are written to the
+// physical edges every platform reads instead, which is exact rather than an
+// approximation: `direction` never flips the block axis, so block-start is the
+// top edge and block-end the bottom one on every platform.
 function parseBorderBlock(
   { value }: DeclarationType<"border-block">,
   builder: StylesheetBuilder,
 ) {
+  const width = parseBorderSideWidth(value.width, builder);
+
   addColorDescriptor(builder, "border-block-color", value.color);
-  builder.addDescriptor(
-    "border-block-width",
-    parseBorderSideWidth(value.width, builder),
-  );
-  builder.addDescriptor(
-    "border-block-style",
+  builder.addDescriptor("border-top-width", width);
+  builder.addDescriptor("border-bottom-width", width);
+  dropUnsupportedEdgeStyle(
     parseBorderStyle(value.style, builder),
+    builder,
+    "border-block-style",
   );
 }
 
@@ -678,8 +687,13 @@ function parseBorderBlockStart(
 ) {
   addColorDescriptor(builder, "border-block-start-color", value.color);
   builder.addDescriptor(
-    "border-block-start-width",
+    "border-top-width",
     parseBorderSideWidth(value.width, builder),
+  );
+  dropUnsupportedEdgeStyle(
+    parseBorderStyle(value.style, builder),
+    builder,
+    "border-block-start-style",
   );
 }
 
@@ -689,8 +703,13 @@ function parseBorderBlockEnd(
 ) {
   addColorDescriptor(builder, "border-block-end-color", value.color);
   builder.addDescriptor(
-    "border-block-end-width",
+    "border-bottom-width",
     parseBorderSideWidth(value.width, builder),
+  );
+  dropUnsupportedEdgeStyle(
+    parseBorderStyle(value.style, builder),
+    builder,
+    "border-block-end-style",
   );
 }
 
@@ -710,12 +729,14 @@ function parseBorderInline(
   builder.addDescriptor("border-inline-start-width", width);
   builder.addDescriptor("border-inline-end-width", width);
 
-  // The style keeps its faithful CSS key. React Native's only border style is
+  // The style is dropped, as it is for `border-inline-start` / `-end` and for
+  // every per-edge style longhand. React Native's only border style is
   // `borderStyle` and it applies to the whole box, so there is no key for one
   // axis to map to and a near-miss would style the block edges too.
-  builder.addDescriptor(
-    "border-inline-style",
+  dropUnsupportedEdgeStyle(
     parseBorderStyle(value.style, builder),
+    builder,
+    "border-inline-style",
   );
 }
 
@@ -728,7 +749,7 @@ function parseBorderInlineStart(
     "border-inline-start-width",
     parseBorderSideWidth(value.width, builder),
   );
-  dropUnsupportedInlineStyle(
+  dropUnsupportedEdgeStyle(
     parseBorderStyle(value.style, builder),
     builder,
     "border-inline-start-style",
@@ -744,7 +765,7 @@ function parseBorderInlineEnd(
     "border-inline-end-width",
     parseBorderSideWidth(value.width, builder),
   );
-  dropUnsupportedInlineStyle(
+  dropUnsupportedEdgeStyle(
     parseBorderStyle(value.style, builder),
     builder,
     "border-inline-end-style",
@@ -770,8 +791,21 @@ export function parseBorderInlineWidth(
   );
 }
 
-export function parseBorderInlineStyle(
+/**
+ * Every per-edge border style, on either logical axis.
+ *
+ * React Native has no per-edge border style at any layer — the two
+ * BaseViewConfigs and ReactNativeStyleAttributes carry `borderStyle` and
+ * nothing else, and Android's BorderDrawable holds one style for the whole
+ * path — so all six longhands drop rather than reaching a key the platform
+ * ignores. The two-value forms name the edge they came from in the warning,
+ * so a reader is told which half of the declaration was discarded.
+ */
+export function parseUnsupportedEdgeStyle(
   declaration: DeclarationType<
+    | "border-block-style"
+    | "border-block-start-style"
+    | "border-block-end-style"
     | "border-inline-style"
     | "border-inline-start-style"
     | "border-inline-end-style"
@@ -779,23 +813,29 @@ export function parseBorderInlineStyle(
   builder: StylesheetBuilder,
 ) {
   if (typeof declaration.value === "string") {
-    dropUnsupportedInlineStyle(
+    dropUnsupportedEdgeStyle(
       parseBorderStyle(declaration.value, builder),
       builder,
       declaration.property,
     );
-  } else {
-    dropUnsupportedInlineStyle(
-      parseBorderStyle(declaration.value.start, builder),
-      builder,
-      "border-inline-start-style",
-    );
-    dropUnsupportedInlineStyle(
-      parseBorderStyle(declaration.value.end, builder),
-      builder,
-      "border-inline-end-style",
-    );
+    return;
   }
+
+  const [startProperty, endProperty] =
+    declaration.property === "border-block-style"
+      ? (["border-block-start-style", "border-block-end-style"] as const)
+      : (["border-inline-start-style", "border-inline-end-style"] as const);
+
+  dropUnsupportedEdgeStyle(
+    parseBorderStyle(declaration.value.start, builder),
+    builder,
+    startProperty,
+  );
+  dropUnsupportedEdgeStyle(
+    parseBorderStyle(declaration.value.end, builder),
+    builder,
+    endProperty,
+  );
 }
 
 /**
@@ -819,10 +859,10 @@ function unparsedComponentValues(
 }
 
 /**
- * Expand an inline-axis shorthand that a var() kept unparsed, the way
- * parseBorderInline* expands the parsed form.
+ * Expand a two-edge logical-axis shorthand that a var() kept unparsed, the way
+ * parseBorderInline* / parseBorderBlock* expand the parsed form.
  */
-function parseUnparsedInlineAxis(
+function parseUnparsedAxis(
   tokenOrValues: TokenOrValue[],
   [startProperty, endProperty]: readonly [string, string],
   builder: StylesheetBuilder,
@@ -864,7 +904,7 @@ function parseUnparsedInlineAxis(
   builder.addWarning("value", `${components.length} values (expected 1 or 2)`);
 }
 
-function dropUnsupportedInlineStyle(
+function dropUnsupportedEdgeStyle(
   style: string | undefined,
   builder: StylesheetBuilder,
   property: string,
@@ -1540,16 +1580,11 @@ export function parseUnparsedDeclaration(
     return;
   }
 
-  if (unsupportedInlineShorthands.has(property)) {
-    builder.addWarning("property", property);
-    return;
-  }
-
   // Nothing is lost that React Native could have rendered: the whole property
   // has no native attribute, at any value. Warning here would fire on every
   // Tailwind v4 border-{x,s,e}-* utility, which emits `var(--tw-border-style)`
   // defaulting to the `solid` the parsed path drops without a word.
-  if (unsupportedInlineStyles.has(property)) {
+  if (unsupportedEdgeStyles.has(property)) {
     return;
   }
 
@@ -1574,14 +1609,9 @@ export function parseUnparsedDeclaration(
     property = rename;
   }
 
-  const inlineAxis = inlineAxisExpansion[property];
-  if (inlineAxis) {
-    parseUnparsedInlineAxis(
-      declaration.value.value,
-      inlineAxis,
-      builder,
-      property,
-    );
+  const axis = axisExpansion[property];
+  if (axis) {
+    parseUnparsedAxis(declaration.value.value, axis, builder, property);
     return;
   }
 
@@ -3580,34 +3610,24 @@ export function parseBorderStyle(
   return undefined;
 }
 
+/**
+ * Both edges, always. There is no collapse: `borderBlockWidth` is not a key
+ * React Native reads outside iOS Fabric, so two equal widths written to it
+ * would paint on one platform and vanish on the others. The physical edges the
+ * block axis maps to carry it everywhere.
+ */
 export function parseBorderBlockWidth(
   declaration: DeclarationType<"border-block-width">,
   builder: StylesheetBuilder,
 ) {
-  const start = parseBorderSideWidth(declaration.value.start, builder);
-  const end = parseBorderSideWidth(declaration.value.end, builder);
-
-  if (start === end) {
-    builder.addDescriptor("border-block-width", start);
-  } else {
-    builder.addDescriptor("border-block-start-width", start);
-    builder.addDescriptor("border-block-end-width", end);
-  }
-}
-
-function parseBorderBlockStyle(
-  declaration: DeclarationType<"border-block-style">,
-  builder: StylesheetBuilder,
-) {
-  const start = parseBorderStyle(declaration.value.start, builder);
-  const end = parseBorderStyle(declaration.value.end, builder);
-
-  if (start == end) {
-    builder.addDescriptor("border-block-style", start);
-  } else {
-    builder.addDescriptor("border-block-start-style", start);
-    builder.addDescriptor("border-block-end-style", end);
-  }
+  builder.addDescriptor(
+    "border-top-width",
+    parseBorderSideWidth(declaration.value.start, builder),
+  );
+  builder.addDescriptor(
+    "border-bottom-width",
+    parseBorderSideWidth(declaration.value.end, builder),
+  );
 }
 
 export function parseBorderSideWidthDeclaration(

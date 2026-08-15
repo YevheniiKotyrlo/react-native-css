@@ -12,10 +12,9 @@ import { shorthandHandler } from "./_handler";
  * the width, the style and the colour together with nothing to show for it.
  *
  * Each edge names the keys it writes. A `undefined` key is a component React
- * Native has no per-edge key for: it has one `borderStyle` for the whole box,
- * so a physical edge's style is read and discarded — which is what the
- * compile-time parsers do with it.
- *
+ * Native has no key for at that edge: it has one `borderStyle` for the whole
+ * box and none per edge on either axis, so every edge's style but the box's own
+ * is read and discarded — which is what the compile-time parsers do with it.
  */
 interface BorderSideKeys {
   readonly width: string | undefined;
@@ -109,20 +108,70 @@ export const borderLeft = borderSideHandler({
   color: "borderLeftColor",
 });
 
-export const borderBlock = borderSideHandler({
-  width: "borderBlockWidth",
-  style: "borderBlockStyle",
-  color: "borderBlockColor",
-});
+/**
+ * An AXIS shorthand, which sets BOTH of its axis's edges.
+ *
+ * Neither axis has a full set of axis-level keys to collapse into, so each
+ * component is written to one edge's key by `start` and mirrored onto the
+ * other, which is what the compile-time parser produces for the same
+ * declaration.
+ *
+ * Mirrored after the fact rather than declared as a two-key target, because a
+ * LIST in a `shorthandHandler` mapping is a deep PATH (`android_ripple.color`),
+ * not several keys: naming both would nest the second inside the first.
+ */
+function axisHandler(
+  start: StyleResolver,
+  twins: Readonly<Record<string, string>>,
+): StyleResolver {
+  return (resolve, value, get, options) => {
+    const resolved = start(resolve, value, get, options);
+
+    if (typeof resolved !== "object" || resolved === null) {
+      return resolved;
+    }
+
+    // Spread rather than mutate: the handler's result carries `ShortHandSymbol`,
+    // and a spread copies own symbol keys along with the string ones.
+    const both: Record<string, unknown> = { ...resolved };
+
+    for (const [startKey, endKey] of Object.entries(twins)) {
+      if (startKey in both) {
+        both[endKey] = both[startKey];
+      }
+    }
+
+    return both;
+  };
+}
+
+// The block AXIS reaches React Native under two different spellings and only
+// the COLOUR half is real. `borderBlockColor`, `borderBlockStartColor` and
+// `borderBlockEndColor` are style attributes on both platforms, so the colour
+// keeps its own key. `borderBlockWidth` and the two per-edge block widths live
+// in `BaseViewConfig.ios.js` and nowhere else, so a width written to them
+// paints on iOS Fabric and vanishes on Android and the old architecture — the
+// physical edges every platform reads carry it instead. `direction` never
+// flips the block axis, so block-start is the top edge and block-end the
+// bottom one on every platform, which makes that exact rather than an
+// approximation.
+export const borderBlock = axisHandler(
+  borderSideHandler({
+    width: "borderTopWidth",
+    style: undefined,
+    color: "borderBlockColor",
+  }),
+  { borderTopWidth: "borderBottomWidth" },
+);
 
 export const borderBlockStart = borderSideHandler({
-  width: "borderBlockStartWidth",
+  width: "borderTopWidth",
   style: undefined,
   color: "borderBlockStartColor",
 });
 
 export const borderBlockEnd = borderSideHandler({
-  width: "borderBlockEndWidth",
+  width: "borderBottomWidth",
   style: undefined,
   color: "borderBlockEndColor",
 });
@@ -130,61 +179,28 @@ export const borderBlockEnd = borderSideHandler({
 // The inline AXIS shorthand sets both inline edges, and {inline-start,
 // inline-end} = {start, end} whichever way the direction runs — so React
 // Native's `borderStart*` / `borderEnd*` are exactly this, and there is no
-// axis-level key to collapse into. The STYLE half keeps its faithful CSS
-// spelling because React Native has no per-edge border style at all.
-/**
- * The inline AXIS shorthand, which sets BOTH inline edges.
- *
- * React Native has no axis-level key to collapse them into — `borderInlineWidth`
- * and `borderInlineColor` do not exist — so each component is written to the
- * start key and mirrored onto the end one, which is what the compile-time
- * parser produces for the same declaration.
- *
- * Mirrored after the fact rather than declared as a two-key target, because a
- * LIST in a `shorthandHandler` mapping is a deep PATH (`android_ripple.color`),
- * not several keys: naming both would nest the second inside the first.
- */
-const inlineStartComponents = borderSideHandler({
-  width: "borderStartWidth",
-  style: "borderInlineStyle",
-  color: "borderStartColor",
-});
-
-/** The start key each mirrored component copies to its end twin. */
-const INLINE_EDGE_TWINS: Readonly<Record<string, string>> = {
-  borderStartWidth: "borderEndWidth",
-  borderStartColor: "borderEndColor",
-};
-
-export const borderInline: StyleResolver = (resolve, value, get, options) => {
-  const start = inlineStartComponents(resolve, value, get, options);
-
-  if (typeof start !== "object" || start === null) {
-    return start;
-  }
-
-  // Spread rather than mutate: the handler's result carries `ShortHandSymbol`,
-  // and a spread copies own symbol keys along with the string ones.
-  const both: Record<string, unknown> = { ...start };
-
-  for (const [startKey, endKey] of Object.entries(INLINE_EDGE_TWINS)) {
-    if (startKey in both) {
-      both[endKey] = both[startKey];
-    }
-  }
-
-  return both;
-};
+// axis-level key to collapse into.
+export const borderInline = axisHandler(
+  borderSideHandler({
+    width: "borderStartWidth",
+    style: undefined,
+    color: "borderStartColor",
+  }),
+  {
+    borderStartWidth: "borderEndWidth",
+    borderStartColor: "borderEndColor",
+  },
+);
 
 export const borderInlineStart = borderSideHandler({
   width: "borderStartWidth",
-  style: "borderInlineStartStyle",
+  style: undefined,
   color: "borderStartColor",
 });
 
 export const borderInlineEnd = borderSideHandler({
   width: "borderEndWidth",
-  style: "borderInlineEndStyle",
+  style: undefined,
   color: "borderEndColor",
 });
 

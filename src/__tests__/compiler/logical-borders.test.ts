@@ -215,13 +215,16 @@ describe("logical border shorthands via var() (unparsed path)", () => {
     ]);
   });
 
+  // The fallback ships as the raw token rather than a number: a length keeps
+  // its unit until the value resolves, and `native/logical-borders.test.tsx`
+  // is where the rendered `3` is asserted.
   test("border-inline-width with a var() fallback", () => {
     expect(getRule("border-inline-width: var(--w, 3px);").rule).toStrictEqual([
       {
         s: [1, 1],
         d: [
-          [[{}, "var", ["w", 3], 1], "borderStartWidth", 1],
-          [[{}, "var", ["w", 3], 1], "borderEndWidth", 1],
+          [[{}, "var", ["w", "3px"], 1], "borderStartWidth", 1],
+          [[{}, "var", ["w", "3px"], 1], "borderEndWidth", 1],
         ],
         dv: 1,
       },
@@ -291,23 +294,298 @@ describe("logical border shorthands with two values (unparsed path)", () => {
   });
 });
 
-describe("logical border shorthands React Native cannot express", () => {
-  // border-inline / -start / -end pack width, style and colour into one
-  // runtime value, and no style resolver fans one slot out to a per-edge pair.
-  test.each(["border-inline", "border-inline-start", "border-inline-end"])(
-    "%s with a var() warns and drops",
-    (property) => {
-      const { rule, warnings } = getRule(`${property}: var(--b);`);
+describe("logical border three-part shorthands via var() (unparsed path)", () => {
+  // border-inline / -start / -end each pack width, style and colour into one
+  // value that stays opaque until the variable resolves, exactly as `border`
+  // does. They compile to the same runtime-call shape, and the native resolver
+  // fans the resolved list out across the inline edges.
+  test.each([
+    ["border-inline", "borderInline"],
+    ["border-inline-start", "borderInlineStart"],
+    ["border-inline-end", "borderInlineEnd"],
+  ])("%s with a var() compiles to a runtime call", (property, resolver) => {
+    const { rule, warnings } = getRule(`${property}: var(--b);`);
 
-      expect(rule).toBeUndefined();
-      expect(warnings).toStrictEqual({ properties: [property] });
-    },
-  );
+    expect(rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [[[{}, resolver, [{}, "var", "b", 1], 1], resolver, 1]],
+        dv: 1,
+      },
+    ]);
+    expect(warnings).toStrictEqual({});
+  });
+
+  // The same shape `border` compiles to, which is what makes one runtime
+  // handler serve both.
+  test("the runtime-call shape matches the one `border` compiles to", () => {
+    const inline = getRule("border-inline: var(--b);").rule;
+    const uniform = getRule("border: var(--b);").rule;
+
+    expect(inline).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [[[{}, "borderInline", [{}, "var", "b", 1], 1], "borderInline", 1]],
+        dv: 1,
+      },
+    ]);
+    expect(uniform).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [[[{}, "border", [{}, "var", "b", 1], 1], "border", 1]],
+        dv: 1,
+      },
+    ]);
+  });
 
   test.each(["border-inline", "border-inline-start", "border-inline-end"])(
-    "%s without a var() still expands",
+    "%s without a var() still expands at compile time",
     (property) => {
       expect(getRule(`${property}: 2px solid red;`).warnings).toStrictEqual({});
     },
   );
+});
+
+/**
+ * The block axis, which React Native supports differently from the inline one.
+ *
+ * The three block COLOURS are real props — `borderBlockColor`,
+ * `borderBlockStartColor` and `borderBlockEndColor` are in
+ * `ReactNativeStyleAttributes`, in both `BaseViewConfig`s and in `ViewStyle` —
+ * so they are emitted as-is. The block WIDTHS appear only in
+ * `BaseViewConfig.ios.js`, so emitting them paints on iOS and nowhere else;
+ * they map to the physical edges instead. `direction` never flips the block
+ * axis, so block-start is the top edge on every platform.
+ */
+describe("block border widths", () => {
+  test("border-block-start-width", () => {
+    expect(getRule("border-block-start-width: 2px;").rule).toStrictEqual([
+      { s: [1, 1], d: [{ borderTopWidth: 2 }] },
+    ]);
+  });
+
+  test("border-block-end-width", () => {
+    expect(getRule("border-block-end-width: 2px;").rule).toStrictEqual([
+      { s: [1, 1], d: [{ borderBottomWidth: 2 }] },
+    ]);
+  });
+
+  test("border-block-width", () => {
+    expect(getRule("border-block-width: 2px;").rule).toStrictEqual([
+      { s: [1, 1], d: [{ borderTopWidth: 2, borderBottomWidth: 2 }] },
+    ]);
+  });
+
+  test("border-block-width with two values", () => {
+    expect(getRule("border-block-width: 1px 2px;").rule).toStrictEqual([
+      { s: [1, 1], d: [{ borderTopWidth: 1, borderBottomWidth: 2 }] },
+    ]);
+  });
+});
+
+describe("block border colors", () => {
+  test.each([
+    ["border-block-start-color", "borderBlockStartColor"],
+    ["border-block-end-color", "borderBlockEndColor"],
+    ["border-block-color", "borderBlockColor"],
+  ])("%s keeps React Native's own prop", (property, key) => {
+    expect(getRule(`${property}: red;`).rule).toStrictEqual([
+      { s: [1, 1], d: [{ [key]: "#f00" }] },
+    ]);
+  });
+});
+
+describe("block border styles", () => {
+  // React Native has no per-edge border style on either axis.
+  test.each([
+    "border-block-style",
+    "border-block-start-style",
+    "border-block-end-style",
+  ])("%s: solid is dropped without warning", (property) => {
+    const { rule, warnings } = getRule(`${property}: solid;`);
+
+    expect(rule).toBeUndefined();
+    expect(warnings).toStrictEqual({});
+  });
+
+  test("border-block-start-style: dashed is dropped with a warning", () => {
+    const { rule, warnings } = getRule("border-block-start-style: dashed;");
+
+    expect(rule).toBeUndefined();
+    expect(warnings).toStrictEqual({
+      values: { "border-block-start-style": ["dashed"] },
+    });
+  });
+
+  test("border-block-style: two values warn per edge", () => {
+    expect(
+      getRule("border-block-style: dashed dotted;").warnings,
+    ).toStrictEqual({
+      values: {
+        "border-block-start-style": ["dashed"],
+        "border-block-end-style": ["dotted"],
+      },
+    });
+  });
+});
+
+describe("block border shorthands", () => {
+  test("border-block", () => {
+    expect(getRule("border-block: 2px solid red;").rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [
+          {
+            borderBlockColor: "#f00",
+            borderTopWidth: 2,
+            borderBottomWidth: 2,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("border-block-start", () => {
+    expect(getRule("border-block-start: 2px solid red;").rule).toStrictEqual([
+      { s: [1, 1], d: [{ borderBlockStartColor: "#f00", borderTopWidth: 2 }] },
+    ]);
+  });
+
+  test("border-block-end", () => {
+    expect(getRule("border-block-end: 2px solid red;").rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [{ borderBlockEndColor: "#f00", borderBottomWidth: 2 }],
+      },
+    ]);
+  });
+
+  test("a block shorthand with a dashed style warns", () => {
+    expect(getRule("border-block: 2px dashed red;").warnings).toStrictEqual({
+      values: { "border-block-style": ["dashed"] },
+    });
+  });
+});
+
+describe("block borders via var() (unparsed path)", () => {
+  test.each([
+    ["border-block-start-width", "borderTopWidth"],
+    ["border-block-end-width", "borderBottomWidth"],
+  ])("%s renames on the unparsed path too", (property, key) => {
+    expect(getRule(`${property}: var(--w);`).rule).toStrictEqual([
+      { s: [1, 1], d: [[[{}, "var", "w", 1], key, 1]], dv: 1 },
+    ]);
+  });
+
+  // The two-edge block shorthands defer to a runtime call, not to a
+  // compile-time expansion into the pair. The distinction is not a spelling:
+  // the resolver splits the value AFTER it resolves, so a single `var()`
+  // holding two values reaches one edge each, which a compile-time expansion
+  // cannot do — it would have to write the whole unresolved value to both. The
+  // rendered split is asserted in `native/logical-borders.test.tsx`; here only
+  // the call shape is pinned, and it is the same shape the three-part block
+  // shorthands below compile to.
+  test.each([
+    ["border-block-width", "borderBlockWidth"],
+    ["border-block-color", "borderBlockColor"],
+  ])("%s with one var() compiles to a runtime call", (property, resolver) => {
+    expect(getRule(`${property}: var(--v);`).rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [[[{}, resolver, [{}, "var", "v", 1], 1], resolver, 1]],
+        dv: 1,
+      },
+    ]);
+  });
+
+  test.each([
+    ["border-block-width", "borderBlockWidth"],
+    ["border-block-color", "borderBlockColor"],
+  ])("%s: var() var() reaches the resolver as a pair", (property, resolver) => {
+    expect(getRule(`${property}: var(--a) var(--b);`).rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [
+          [
+            [
+              {},
+              resolver,
+              [
+                [{}, "var", "a", 1],
+                [{}, "var", "b", 1],
+              ],
+              1,
+            ],
+            resolver,
+            1,
+          ],
+        ],
+        dv: 1,
+      },
+    ]);
+  });
+
+  // The count is checked where the values are, which is the resolver — so more
+  // than two compiles like any other list and renders nothing. The trade for
+  // the correct split above is that this drop carries no compile-time warning;
+  // `native/logical-borders.test.tsx` is what holds the drop itself.
+  test("more than two values reaches the resolver and is not warned about", () => {
+    const { rule, warnings } = getRule(
+      "border-block-width: var(--a) var(--b) var(--c);",
+    );
+
+    expect(rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [
+          [
+            [
+              {},
+              "borderBlockWidth",
+              [
+                [{}, "var", "a", 1],
+                [{}, "var", "b", 1],
+                [{}, "var", "c", 1],
+              ],
+              1,
+            ],
+            "borderBlockWidth",
+            1,
+          ],
+        ],
+        dv: 1,
+      },
+    ]);
+    expect(warnings).toStrictEqual({});
+  });
+
+  test.each([
+    "border-block-style",
+    "border-block-start-style",
+    "border-block-end-style",
+  ])("%s with a var() drops without warning", (property) => {
+    const { rule, warnings } = getRule(`${property}: var(--tw-border-style);`);
+
+    expect(rule).toBeUndefined();
+    expect(warnings).toStrictEqual({});
+  });
+
+  // The same runtime-call shape the inline axis and `border` compile to, which
+  // is what lets one handler grammar serve all seven.
+  test.each([
+    ["border-block", "borderBlock"],
+    ["border-block-start", "borderBlockStart"],
+    ["border-block-end", "borderBlockEnd"],
+  ])("%s with a var() compiles to a runtime call", (property, resolver) => {
+    const { rule, warnings } = getRule(`${property}: var(--b);`);
+
+    expect(rule).toStrictEqual([
+      {
+        s: [1, 1],
+        d: [[[{}, resolver, [{}, "var", "b", 1], 1], resolver, 1]],
+        dv: 1,
+      },
+    ]);
+    expect(warnings).toStrictEqual({});
+  });
 });

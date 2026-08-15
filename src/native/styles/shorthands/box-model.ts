@@ -127,9 +127,20 @@ export const borderStyle = repeatShorthandHandler({
   renders: new Set(["solid", "dotted", "dashed"]),
 });
 
+/**
+ * The block AXIS width, which React Native reads only as physical edges.
+ *
+ * `borderBlockWidth` and the two per-edge block widths are in
+ * `BaseViewConfig.ios.js` and nowhere else — not in `ReactNativeStyleAttributes`,
+ * not on Android, not in `ViewStyle` — so a width written to any of them paints
+ * on iOS Fabric and vanishes everywhere else. `direction` never flips the block
+ * axis, so block-start is the top edge and block-end the bottom one on every
+ * platform, which makes this exact rather than an approximation. There is
+ * nothing to collapse into for the same reason the inline axis has nothing:
+ * the one axis-level key React Native does read on this axis is the COLOUR.
+ */
 export const borderBlockWidth = repeatShorthandHandler({
-  positions: ["borderBlockStartWidth", "borderBlockEndWidth"],
-  collapseTo: "borderBlockWidth",
+  positions: ["borderTopWidth", "borderBottomWidth"],
 });
 
 export const borderInlineWidth = repeatShorthandHandler({

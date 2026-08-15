@@ -207,26 +207,39 @@ test("aspect-ratio: auto 16/9 keeps the half React Native can render", () => {
  * 4. `border-block-end-style` — one edge of a pair had no parser
  ****************************************************************************/
 
-test("both block edges accept a border style", () => {
+test("both block edges are recognised, and both report the same drop", () => {
   // `border-block-start-style` was in the parser table and its opposite edge
   // was not, so one of a symmetric pair compiled and the other was reported as
-  // a property this library does not handle. `parseBorderBlockStyle` writes
-  // BOTH keys when the two edges differ, so the table already had to know the
-  // name it did not carry.
+  // a property this library does not handle. The asymmetry is what this pins,
+  // and it survives the answer changing: both edges now reach
+  // `parseUnsupportedEdgeStyle`, so both are RECOGNISED and both drop.
+  //
+  // Dropped rather than emitted, because React Native has no per-edge border
+  // style at any layer — `borderBlockStartStyle` is a name nothing reads, and
+  // an entry in the style object carrying it looks exactly like a live
+  // declaration. A non-`solid` value is warned about under its own edge's name,
+  // which is the other half of the symmetry: an unrecognised property warns
+  // under `properties`, a recognised one that cannot render warns under
+  // `values`.
   const compiled = compileWithAutoDebug(`
     .bbs { border-block-start-style: dashed; }
     .bbe { border-block-end-style: dashed; }
   `);
 
-  expect(compiled.warnings()).toStrictEqual({});
+  expect(compiled.warnings()).toStrictEqual({
+    values: {
+      "border-block-start-style": ["dashed"],
+      "border-block-end-style": ["dashed"],
+    },
+  });
 
   registerCSS(`
     .bbs-r { border-block-start-style: dashed; }
     .bbe-r { border-block-end-style: dashed; }
   `);
 
-  expect(styleOf("bbs-r")).toStrictEqual({ borderBlockStartStyle: "dashed" });
-  expect(styleOf("bbe-r")).toStrictEqual({ borderBlockEndStyle: "dashed" });
+  expect(styleOf("bbs-r")).toBeUndefined();
+  expect(styleOf("bbe-r")).toBeUndefined();
 });
 
 /*****************************************************************************

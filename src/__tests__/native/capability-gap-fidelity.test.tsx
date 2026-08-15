@@ -225,18 +225,21 @@ test("a logical border property maps to the React Native key that means the same
   });
 });
 
-test("a logical border STYLE keeps its own key, because nothing maps to it", () => {
+test("a logical border STYLE is dropped, because nothing maps to it", () => {
   registerCSS(`
     .cgf-logical-style { border-inline-style: dashed; }
   `);
 
-  // The other half of the same rule. React Native has ONE `borderStyle` for the
-  // whole box and no per-edge style at all, so there is nothing to map to — and
-  // the faithful CSS key goes out rather than the declaration being dropped.
-  // Inert today; it starts working the day React Native adds the key.
-  expect(styleOf("cgf-logical-style")).toStrictEqual({
-    borderInlineStyle: "dashed",
-  });
+  // The other half of the same rule, and the point where the two halves
+  // diverge. A logical COLOUR has a key React Native reads, so it is renamed
+  // onto it. A per-edge STYLE has none at any layer — not in
+  // `ReactNativeStyleAttributes`, not in either `BaseViewConfig`, not in
+  // `ViewStyle` — so there is nothing to rename onto and the declaration is
+  // dropped with a warning instead. Emitting the faithful CSS key is the third
+  // option and the wrong one: it puts an entry into the style object that reads
+  // exactly like a live declaration and renders nothing, so a reader has no way
+  // to tell the gap from a working style.
+  expect(styleOf("cgf-logical-style")).toBeUndefined();
 });
 
 test("a logical SIZE is renamed to the physical key, because there it is the same property", () => {

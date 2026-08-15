@@ -295,7 +295,10 @@ describe("width / radius / style / opacity longhands - routes agree", () => {
         "2px",
         "4px",
       ),
-      { borderBlockStartWidth: 2 },
+      // The block axis carries its width on the physical edge. `direction`
+      // never flips it, so block-start is the top edge on every platform,
+      // while `borderBlockStartWidth` is a key only iOS Fabric reads.
+      { borderTopWidth: 2 },
     );
   });
 
@@ -922,21 +925,17 @@ describe("per-side and logical `border-*` shorthands", () => {
     // `border-inline-start`, so the width and the colour reach React Native's
     // own keys on every route.
     //
-    // GAP: the STYLE keeps its faithful CSS key. React Native has no per-side
-    // border style at all — only one `borderStyle` for the whole box — so
-    // `borderInlineStartStyle` is filtered out before it reaches the host view.
-    // Renaming it onto `borderStyle` would style the other three sides too,
-    // which is worse than rendering nothing.
+    // The STYLE is dropped. React Native has no per-side border style at all —
+    // only one `borderStyle` for the whole box — so there is no key to write.
+    // Renaming it onto `borderStyle` would style the other three sides too, and
+    // emitting the faithful CSS key would leave an entry in the style object
+    // that reads like a live declaration and paints nothing.
     //
     // The shorthand inherits that naming from the longhands rather than
     // introducing it: `rn-style-coverage.test.tsx`'s "border-inline-* compiles
     // to the start/end keys React Native reads" pins the same key set from
     // `border-inline-start-color` written on its own.
-    expectSidesAgree(
-      routes,
-      { borderStartWidth: 2, borderInlineStartStyle: "solid" },
-      ["borderStartColor"],
-    );
+    expectSidesAgree(routes, { borderStartWidth: 2 }, ["borderStartColor"]);
   });
 
   test("border-inline-end", () => {
@@ -949,11 +948,7 @@ describe("per-side and logical `border-*` shorthands", () => {
 
     // As `border-inline-start`: React Native's name for this side is
     // `borderEndWidth` / `borderEndColor`, and the style has no target.
-    expectSidesAgree(
-      routes,
-      { borderEndWidth: 2, borderInlineEndStyle: "solid" },
-      ["borderEndColor"],
-    );
+    expectSidesAgree(routes, { borderEndWidth: 2 }, ["borderEndColor"]);
   });
 
   test("border-inline", () => {
@@ -967,15 +962,10 @@ describe("per-side and logical `border-*` shorthands", () => {
     // As `border-inline-start`, and with no React Native key for the axis as a
     // pair — `borderInlineWidth` and `borderInlineColor` do not exist — so each
     // component is written to both edges.
-    expectSidesAgree(
-      routes,
-      {
-        borderStartWidth: 2,
-        borderEndWidth: 2,
-        borderInlineStyle: "solid",
-      },
-      ["borderStartColor", "borderEndColor"],
-    );
+    expectSidesAgree(routes, { borderStartWidth: 2, borderEndWidth: 2 }, [
+      "borderStartColor",
+      "borderEndColor",
+    ]);
   });
 
   test("border-block", () => {
@@ -986,14 +976,12 @@ describe("per-side and logical `border-*` shorthands", () => {
       "4px",
     );
 
-    // `borderBlockColor` IS a React Native style key. GAP: `borderBlockWidth`
-    // and `borderBlockStyle` are not — the block axis has to be written as
-    // `borderTopWidth` + `borderBottomWidth` to carry a width.
-    expectSidesAgree(
-      routes,
-      { borderBlockWidth: 2, borderBlockStyle: "solid" },
-      ["borderBlockColor"],
-    );
+    // `borderBlockColor` IS a React Native style key, so the colour keeps it.
+    // `borderBlockWidth` and `borderBlockStyle` are not, so the width is
+    // written as `borderTopWidth` + `borderBottomWidth` and the style drops.
+    expectSidesAgree(routes, { borderTopWidth: 2, borderBottomWidth: 2 }, [
+      "borderBlockColor",
+    ]);
   });
 
   test("border-block-start", () => {
@@ -1005,11 +993,9 @@ describe("per-side and logical `border-*` shorthands", () => {
     );
 
     // The style component is dropped here as it is for `border-top`.
-    // `borderBlockStartColor` IS a React Native style key; GAP:
-    // `borderBlockStartWidth` is not, so only the colour renders.
-    expectSidesAgree(routes, { borderBlockStartWidth: 2 }, [
-      "borderBlockStartColor",
-    ]);
+    // `borderBlockStartColor` IS a React Native style key, so the colour keeps
+    // it; `borderBlockStartWidth` is not, so the width goes to the top edge.
+    expectSidesAgree(routes, { borderTopWidth: 2 }, ["borderBlockStartColor"]);
   });
 });
 
