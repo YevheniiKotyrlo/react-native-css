@@ -77,7 +77,13 @@ export const BORDER_ROUTE_CASES: readonly RouteCase[] = [
     value: "2px solid red",
     alternate: "4px dashed blue",
   },
-  { property: "border-block-color", value: "red blue", alternate: "teal navy" },
+  {
+    property: "border-block-color",
+    value: "red blue",
+    alternate: "teal navy",
+    divergenceNote:
+      "A logical axis shorthand is expanded at COMPILE time, by counting the component values the declaration is written with. `var(--pair)` is one component value however many it later resolves to, so the whole list is assigned to the target the one-value arity picks, while the literal route counts two and splits. The count cannot be taken at compile time, and deferring the axis to a runtime resolver trades this for a worse defect: the resolver writes its keys after the flat ones, so a later declaration of the same property loses to a var() written before it (`native/logical-borders.test.tsx`'s cascade test).",
+  },
   {
     property: "border-block-end",
     value: "2px solid red",
@@ -107,7 +113,13 @@ export const BORDER_ROUTE_CASES: readonly RouteCase[] = [
     value: "solid dashed",
     alternate: "dotted solid",
   },
-  { property: "border-block-width", value: "1px 2px", alternate: "3px 4px" },
+  {
+    property: "border-block-width",
+    value: "1px 2px",
+    alternate: "3px 4px",
+    divergenceNote:
+      "A logical axis shorthand is expanded at COMPILE time, by counting the component values the declaration is written with. `var(--pair)` is one component value however many it later resolves to, so the whole list is assigned to the target the one-value arity picks, while the literal route counts two and splits. The count cannot be taken at compile time, and deferring the axis to a runtime resolver trades this for a worse defect: the resolver writes its keys after the flat ones, so a later declaration of the same property loses to a var() written before it (`native/logical-borders.test.tsx`'s cascade test).",
+  },
   {
     property: "border-bottom",
     value: "2px solid red",
@@ -134,6 +146,8 @@ export const BORDER_ROUTE_CASES: readonly RouteCase[] = [
     property: "border-inline-color",
     value: "red blue",
     alternate: "teal navy",
+    divergenceNote:
+      "A logical axis shorthand is expanded at COMPILE time, by counting the component values the declaration is written with. `var(--pair)` is one component value however many it later resolves to, so the whole list is assigned to the target the one-value arity picks, while the literal route counts two and splits. The count cannot be taken at compile time, and deferring the axis to a runtime resolver trades this for a worse defect: the resolver writes its keys after the flat ones, so a later declaration of the same property loses to a var() written before it (`native/logical-borders.test.tsx`'s cascade test).",
   },
   {
     property: "border-inline-end",
@@ -160,7 +174,13 @@ export const BORDER_ROUTE_CASES: readonly RouteCase[] = [
     value: "solid dashed",
     alternate: "dotted solid",
   },
-  { property: "border-inline-width", value: "1px 2px", alternate: "3px 4px" },
+  {
+    property: "border-inline-width",
+    value: "1px 2px",
+    alternate: "3px 4px",
+    divergenceNote:
+      "A logical axis shorthand is expanded at COMPILE time, by counting the component values the declaration is written with. `var(--pair)` is one component value however many it later resolves to, so the whole list is assigned to the target the one-value arity picks, while the literal route counts two and splits. The count cannot be taken at compile time, and deferring the axis to a runtime resolver trades this for a worse defect: the resolver writes its keys after the flat ones, so a later declaration of the same property loses to a var() written before it (`native/logical-borders.test.tsx`'s cascade test).",
+  },
   {
     property: "border-left",
     value: "2px solid red",

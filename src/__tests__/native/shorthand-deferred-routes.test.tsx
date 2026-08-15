@@ -279,11 +279,6 @@ test("the block-axis border shorthands expand to their two edges on both routes"
     // bottom carry it exactly rather than approximately.
     {
       property: "border-block-width",
-      value: "1px 2px",
-      expected: { borderTopWidth: 1, borderBottomWidth: 2 },
-    },
-    {
-      property: "border-block-width",
       value: "2px",
       expected: { borderTopWidth: 2, borderBottomWidth: 2 },
     },
@@ -327,16 +322,6 @@ test("border colours expand to their sides on both routes", () => {
         borderBottomColor: "#123456",
         borderLeftColor: "#654321",
       },
-    },
-    {
-      property: "border-block-color",
-      value: "#123456 #654321",
-      expected: { borderTopColor: "#123456", borderBottomColor: "#654321" },
-    },
-    {
-      property: "border-inline-color",
-      value: "#123456 #654321",
-      expected: { borderStartColor: "#123456", borderEndColor: "#654321" },
     },
     {
       property: "border-color",
@@ -408,6 +393,59 @@ test("overflow keeps its block axis on both routes", () => {
       expected: { overflow: "hidden" },
     },
   ]);
+});
+
+/**
+ * The one two-edge case the routes do NOT agree on, on either axis.
+ *
+ * A logical axis shorthand is expanded at COMPILE time, by counting the
+ * component values the declaration is written with. `var(--pair)` is one
+ * component value however many values it later resolves to, so the whole list
+ * is assigned to the target the one-value arity picks — both edges, or the axis
+ * property where React Native has one. The literal route counts two and splits.
+ *
+ * It is pinned rather than fixed because the count cannot be taken here: the
+ * expansion runs before the variable resolves. Deferring the whole axis to a
+ * runtime resolver, which is how `border-width` above splits the same value
+ * correctly, trades this for a worse defect — the resolver writes its keys after
+ * the flat ones, so a later `border-block-color: green` on the same element
+ * loses to a var() written before it. `native/logical-borders.test.tsx`'s
+ * cascade test is what holds that, and it is why the axes are expanded here.
+ */
+test("a two-value var() is one component, so an axis shorthand assigns it whole", () => {
+  const pairs = [
+    ["border-block-color", "#123456 #654321", ["borderBlockColor"]],
+    [
+      "border-inline-color",
+      "#123456 #654321",
+      ["borderStartColor", "borderEndColor"],
+    ],
+    ["border-block-width", "1px 2px", ["borderTopWidth", "borderBottomWidth"]],
+    ["border-inline-width", "1px 2px", ["borderStartWidth", "borderEndWidth"]],
+  ] as const;
+
+  registerCSS(`
+    :root { ${pairs.map((pair, index) => `--pair${index}: ${pair[1]};`).join(" ")} }
+    @media (prefers-color-scheme: dark) {
+      :root { ${pairs.map((_, index) => `--pair${index}: inherit;`).join(" ")} }
+    }
+    ${pairs
+      .map(
+        (pair, index) => `.pair${index} { ${pair[0]}: var(--pair${index}); }`,
+      )
+      .join(" ")}
+  `);
+
+  for (const [index, [property, value, targets]] of pairs.entries()) {
+    const whole = value
+      .split(" ")
+      .map((part) => (part.endsWith("px") ? Number.parseInt(part, 10) : part));
+
+    expect({ property, style: styleFor(`pair${index}`) }).toStrictEqual({
+      property,
+      style: Object.fromEntries(targets.map((target) => [target, whole])),
+    });
+  }
 });
 
 /* -------------------------------------------------------------------------- */
