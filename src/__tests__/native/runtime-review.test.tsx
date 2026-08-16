@@ -312,8 +312,12 @@ describe("a value supplied from JavaScript reads as the CSS it is", () => {
   test("a ratio, which is still a ratio", () => {
     registerCSS(`.provided { aspect-ratio: var(--ratio); }`);
 
+    // In the compiler's spelling, because that is the point of the tokeniser:
+    // a value supplied from JavaScript has to arrive as the descriptor the same
+    // declaration would have compiled to. Whitespace around the solidus is not
+    // part of a `<ratio>`.
     expect(providedStyleOf("provided", { "--ratio": "16 / 9" })).toStrictEqual({
-      aspectRatio: "16 / 9",
+      aspectRatio: "16/9",
     });
   });
 

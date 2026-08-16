@@ -782,38 +782,48 @@ test(":dir() is dropped as a bare pseudo-class even though [dir] works", () => {
  * Pseudo-elements — CSS Pseudo-Elements Level 4
  * ---------------------------------------------------------------------- */
 
-test("::placeholder and ::selection retarget `color` onto RN props", () => {
+test("::placeholder and ::selection each retarget one declaration onto an RN prop", () => {
+  // A different declaration each, because each names a different thing React
+  // Native can paint: `::placeholder { color }` is the placeholder text, and
+  // `::selection { background-color }` is the band behind the selected text,
+  // which is what `selectionColor` sets. `::selection { color }` is the
+  // selected TEXT's colour and has no prop, so it is dropped.
   registerCSS(`.ph1::placeholder { color: red; }`);
   render(<TextInput testID="pe-ph" className="ph1" />);
   expect(screen.getByTestId("pe-ph").props.placeholderTextColor).toBe("#f00");
 
-  registerCSS(`.se1::selection { color: red; }`);
+  registerCSS(`.se1::selection { background-color: red; }`);
   render(<TextInput testID="pe-se" className="se1" />);
   expect(screen.getByTestId("pe-se").props.selectionColor).toBe("#f00");
 
-  // The vendor-prefixed alias normalises to the same thing.
+  // The vendor-prefixed alias normalises to the same thing: the retargeted
+  // declaration and nothing beside it. An empty `{}` in front of it would be a
+  // style object the rule ships asserting no key at all, which is what the rule
+  // carried while a pseudo-element's declarations still landed on the element.
   expect(
     compiled(`.pe-wk::-webkit-input-placeholder { color: red; }`)
       .s?.[0]?.[1]?.[0]?.d,
-  ).toStrictEqual([{}, ["#f00", ["placeholderTextColor"]]]);
+  ).toStrictEqual([["#f00", ["placeholderTextColor"]]]);
 });
 
-test("a non-color declaration inside ::placeholder / ::selection leaks onto the element", () => {
-  // GAP: CSS Pseudo-Elements 4 §4.4 / §7.1 — only `color` is retargeted. Every
-  // other property in the block is applied to the ELEMENT ITSELF, which is
-  // worse than dropping it: `.a::placeholder { font-size: 33px }` resizes the
-  // input's real text.
-  // React Native: PARTIALLY expressible. `TextInput` exposes exactly two
-  // placeholder/selection knobs — `placeholderTextColor` and `selectionColor`
-  // (plus Android's `selectionHandleColor`) — so `font-size` on a placeholder
-  // has no target and should be DROPPED with a warning, not leaked.
+test("a declaration a pseudo-element cannot express is dropped, not leaked onto the element", () => {
+  // CSS Pseudo-Elements 4 §4.4 / §7.1 — a declaration inside the block styles
+  // the pseudo-element, never its originating element. `TextInput` exposes
+  // exactly two placeholder/selection knobs — `placeholderTextColor` and
+  // `selectionColor` (plus Android's `selectionHandleColor`) — so each
+  // pseudo-element retargets the ONE declaration it can express and drops the
+  // rest, reported through `compile().warnings()`.
+  //
+  // Leaking is strictly worse than dropping: `.a::placeholder { font-size:
+  // 33px }` resized the input's REAL text, and `.a::selection { color: white }`
+  // painted a white band the unchanged text then sat on invisibly.
   registerCSS(`.ph-leak::placeholder { font-size: 33px; }`);
   render(<View testID="pe-leak" className="ph-leak" />);
-  expect(styleOf("pe-leak")).toStrictEqual({ fontSize: 33 });
+  expect(styleOf("pe-leak")).toBeUndefined();
 
-  registerCSS(`.se-leak::selection { background-color: red; }`);
+  registerCSS(`.se-leak::selection { color: red; }`);
   render(<View testID="pe-leak2" className="se-leak" />);
-  expect(styleOf("pe-leak2")).toStrictEqual({ backgroundColor: "#f00" });
+  expect(styleOf("pe-leak2")).toBeUndefined();
 });
 
 test("every other pseudo-element is dropped", () => {
@@ -1471,25 +1481,29 @@ test("@scope is dropped along with everything inside it", () => {
   expect(styleOf("scope")).toBeUndefined();
 });
 
-test("@property contributes its initial-value as a root variable", () => {
+test("@property contributes its initial-value to the registry, not to :root", () => {
+  // `vi`, not `vr`. A registered `initial-value` and a `:root` declaration sit
+  // at different rungs of the cascade — `:root { --pv: blue }` beats the
+  // registered default (css-properties-values-api-1 §2.2) — so they cannot
+  // share a slot and still be told apart. `vn` names the properties registered
+  // `inherits: false`, which is the flag the runtime cascade reads.
   const sheet = compile(
     `@property --pv { syntax: "<color>"; inherits: false; initial-value: red; } .pa { color: var(--pv); }`,
   ).stylesheet();
-  expect(sheet.vr).toStrictEqual([["pv", [["#f00"]]]]);
+  expect(sheet.vr).toBeUndefined();
+  expect(sheet.vi).toStrictEqual([["pv", [["#f00"]]]]);
+  expect(sheet.vn).toStrictEqual(["pv"]);
 
+  // The number, not `"10px"`: a registered initial value is parsed against the
+  // `<length>` its own `syntax` descriptor declares, so the question a declared
+  // custom property defers to the runtime is already answered here.
   expect(
     compile(
       `@property --pl { syntax: "<length>"; inherits: false; initial-value: 10px; } .pb { width: var(--pl); }`,
-    ).stylesheet().vr,
+    ).stylesheet().vi,
   ).toStrictEqual([["pl", [[10]]]]);
 
-  // GAP: CSS Properties & Values 1 §2 — only `initial-value` is read.
-  // `syntax` (type checking and, for animatable types, interpolation) and
-  // `inherits: true/false` are both ignored, so a non-inheriting registered
-  // property still inherits and an out-of-syntax value is never rejected.
-  // React Native: EXPRESSIBLE — the library owns its own variable cascade, so
-  // honouring `inherits: false` is a flag on the variable record; `syntax` is
-  // compile-time validation it already has the parsers for.
+  // `inherits` is read, and it is the only difference between these two sheets.
   const notInherited = compile(
     `@property --pn { syntax: "<color>"; inherits: false; initial-value: red; }
      .pc { color: var(--pn); }`,
@@ -1498,13 +1512,20 @@ test("@property contributes its initial-value as a root variable", () => {
     `@property --pn { syntax: "<color>"; inherits: true; initial-value: red; }
      .pc { color: var(--pn); }`,
   ).stylesheet();
-  expect(notInherited).toStrictEqual(inherited);
+  expect(notInherited.vn).toStrictEqual(["pn"]);
+  expect(inherited.vn).toBeUndefined();
 
-  // A registered property with no `initial-value` contributes nothing.
+  // GAP: CSS Properties & Values 1 §2 — `syntax` is read for the initial value
+  // and nowhere else, so an out-of-syntax value in a rule is never rejected and
+  // an animatable type is not interpolated.
+  // React Native: EXPRESSIBLE — compile-time validation the library already has
+  // the parsers for.
+
+  // A registered property with no `initial-value` contributes no value.
   expect(
     compiled(
       `@property --pu { syntax: "*"; inherits: false; } .pd { width: 1px; }`,
-    ).vr,
+    ).vi,
   ).toBeUndefined();
 });
 

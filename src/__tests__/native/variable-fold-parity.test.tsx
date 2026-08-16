@@ -78,18 +78,12 @@ const TOKEN_CENSUS: Record<RawTokenKind, readonly Shape[]> = {
     { property: "z-index", value: "3" },
   ],
   "percentage": [{ property: "width", value: "50%" }],
-  "dimension": [
-    {
-      property: "transition-duration",
-      value: "3s",
-      knownDivergence: {
-        folded: {},
-        unfolded: { transitionDuration: 3000 },
-        because:
-          "folding routes the duration to the animation system, which paints nothing; not folding leaks it into the static style. A transition gap, not a variable one",
-      },
-    },
-  ],
+  // A length, not a time: `transition-duration: 3s` is the other dimension
+  // token a custom property can hold, and it paints nothing on EITHER path
+  // because a transition property configures the animation system rather than
+  // the style object. That is fold-independent too, but vacuously so, which is
+  // what the guard below rejects — so it is pinned by its own test instead.
+  "dimension": [{ property: "width", value: "10px" }],
   "delim": [
     { property: "aspect-ratio", value: "16 / 9" },
     // A square ratio has a second canonical form, and the property parser
@@ -176,47 +170,25 @@ const VALUE_CENSUS: Record<ValueKind, readonly Shape[]> = {
 };
 
 /**
- * Shorthands are a second fold-independent class: the static parser expands
- * them into their longhands, the runtime one hands React Native the raw list.
- * Same shape as the `rotate` entry above, kept apart because it is a family.
+ * Shorthands are a family rather than a shape, and they are here because they
+ * are the class most likely to diverge: the static parser expands them into
+ * their longhands, so the runtime one has to expand them the same way or the
+ * fold decision becomes visible. It does — `native/styles/shorthands/box-model.ts`
+ * is the runtime half — so these carry no divergence and go through the generic
+ * assertion below.
+ *
+ * React Native has no array form for any of them (`margin` and `padding` are
+ * `DimensionValue`, `borderWidth` a `number`), so the expansion is not a
+ * cosmetic choice between two renderable shapes: it is the only one that
+ * renders.
  */
 const SHORTHANDS: readonly Shape[] = (
   [
-    [
-      "margin",
-      "1px 2px",
-      "marginTop",
-      "marginBottom",
-      "marginLeft",
-      "marginRight",
-    ],
-    [
-      "padding",
-      "1px 2px",
-      "paddingTop",
-      "paddingBottom",
-      "paddingLeft",
-      "paddingRight",
-    ],
-    [
-      "border-width",
-      "1px 2px",
-      "borderTopWidth",
-      "borderBottomWidth",
-      "borderLeftWidth",
-      "borderRightWidth",
-    ],
+    ["margin", "1px 2px"],
+    ["padding", "1px 2px"],
+    ["border-width", "1px 2px"],
   ] as const
-).map(([property, value, top, bottom, left, right]) => ({
-  property,
-  value,
-  knownDivergence: {
-    folded: { [top]: 1, [bottom]: 1, [left]: 2, [right]: 2 },
-    unfolded: { [property.replace("-w", "W")]: [1, 2] },
-    because:
-      "the static parser expands the shorthand, the runtime one does not; fold-independent, and closing it needs a runtime shorthand handler",
-  },
-}));
+).map(([property, value]) => ({ property, value }));
 
 const SHAPES: readonly Shape[] = [
   ...Object.values(VALUE_CENSUS).flat(),
@@ -261,4 +233,20 @@ describe.each(SHAPES)("$property: var(--v) over $value", (shape) => {
     expect(folded).not.toStrictEqual({});
     expect(unfolded).toStrictEqual(folded);
   });
+});
+
+test("a transition property paints nothing, folded or not", () => {
+  // The one shape that is fold-independent VACUOUSLY, which is why it is here
+  // rather than in the census: a transition property configures the animation
+  // system and writes no style key, so both paths render nothing and the guard
+  // above would read that as a census typo.
+  //
+  // Both paths, and that is the claim. `rule.a` is decided by the PROPERTY, so
+  // an unfolded `var()` is still recognised as a transition — deciding it by
+  // the resolved value's function name instead left `transitionDuration: 3000`
+  // sitting in the rendered style under a key React Native has never had.
+  const shape = { property: "transition-duration", value: "3s" } as const;
+
+  expect(renderShape(shape, true)).toStrictEqual({});
+  expect(renderShape(shape, false)).toStrictEqual({});
 });

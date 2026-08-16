@@ -605,9 +605,14 @@ describe("CSS-wide color keywords", () => {
     // drops every keyword it has no resolution context for. Per CSS Color,
     // `currentcolor` used as the value of `color` is defined as `inherit`, so
     // both spell the same computed value and resolve to the same variable.
-    // The ABSENCE of a `v` entry is the no-self-reference guarantee: publishing
-    // this value as its own --__rn-css-color seeds a cycle a descendant then
-    // recurses into (see "never publishes a self-referential" below).
+    //
+    // The absence of a `--__rn-css-color` entry is the no-self-reference
+    // guarantee: publishing this value under its OWN name seeds a cycle a
+    // descendant then recurses into (see "never publishes a self-referential"
+    // below). `--__rn-css-inherit-color` is the other channel — the generic one
+    // every inherited property writes for `useNativeCss` to replay across a
+    // View → Text boundary — and it names a different variable, so a read of it
+    // resolves once and stops.
     expect(stylesheetFor("inherit")).toStrictEqual({
       s: [
         [
@@ -617,6 +622,7 @@ describe("CSS-wide color keywords", () => {
               s: [1, 1],
               d: [[[{}, "var", "__rn-css-color"], "color", 1]],
               dv: 1,
+              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -648,6 +654,7 @@ describe("CSS-wide color keywords", () => {
               s: [1, 1],
               d: [[[{}, "var", "__rn-css-color"], "color", 1]],
               dv: 1,
+              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -667,7 +674,10 @@ describe("CSS-wide color keywords", () => {
             {
               s: [1, 1],
               d: [{ color: "#f00" }],
-              v: [["__rn-css-color", "#f00"]],
+              v: [
+                ["__rn-css-inherit-color", "#f00"],
+                ["__rn-css-color", "#f00"],
+              ],
             },
           ],
         ],
@@ -788,6 +798,7 @@ describe("CSS-wide color keywords", () => {
               s: [1, 1, 1],
               d: [[[{}, "var", "__rn-css-color"], "color", 1]],
               dv: 1,
+              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -810,6 +821,7 @@ describe("CSS-wide color keywords", () => {
               m: [[">=", "width", 100]],
               d: [[[{}, "var", "__rn-css-color"], "color", 1]],
               dv: 1,
+              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -829,6 +841,7 @@ describe("CSS-wide color keywords", () => {
               s: [1, 2],
               d: [[[{}, "var", "__rn-css-color"], "color", 1]],
               dv: 1,
+              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
               p: { h: 1 },
             },
           ],
@@ -838,15 +851,22 @@ describe("CSS-wide color keywords", () => {
   });
 
   test.each([
-    ["placeholder", "placeholderTextColor"],
-    ["selection", "selectionColor"],
-  ])("color: inherit on ::%s targets %s", (pseudoElement, targetProp) => {
-    // A pseudo-element rule retargets the declaration off `style`, so the
-    // inherited-color lookup has to survive the retarget.
-    expect(
-      declarationsFor(`.child::${pseudoElement} { color: inherit; }`),
-    ).toStrictEqual([[[{}, "var", "__rn-css-color"], [targetProp], 1]]);
-  });
+    ["placeholder", "color: inherit", "placeholderTextColor"],
+    ["selection", "background-color: currentcolor", "selectionColor"],
+  ])(
+    "the inherited-color lookup survives ::%s's retarget onto %s",
+    (pseudoElement, declaration, targetProp) => {
+      // A pseudo-element rule retargets the declaration off `style`, so the
+      // inherited-color lookup has to survive the retarget. Each retargets the
+      // one declaration its React Native prop can express — `selectionColor`
+      // paints the band behind the selected text, which is `background-color`
+      // — and `currentcolor` is how a non-`color` property spells a read of the
+      // inherited colour.
+      expect(
+        declarationsFor(`.child::${pseudoElement} { ${declaration} }`),
+      ).toStrictEqual([[[{}, "var", "__rn-css-color"], [targetProp], 1]]);
+    },
+  );
 
   test.each(["revert", "revert-layer"])(
     "color: %s is dropped rather than published as a literal",
@@ -901,7 +921,6 @@ describe("the inherited-color variable is never self-referential", () => {
     "color-mix(in srgb, currentcolor, blue)",
     "color-mix(in srgb, inherit, blue)",
     "rgb(from currentcolor r g b)",
-    "light-dark(currentcolor, blue)",
   ];
 
   test("the census is not empty", () => {
@@ -910,6 +929,27 @@ describe("the inherited-color variable is never self-referential", () => {
 
   test.each(selfReferentialColors)("color: %s publishes no `v`", (value) => {
     expect(publishedInheritedColors(`.child { color: ${value}; }`)).toEqual([]);
+  });
+
+  /**
+   * The guard is asked of each BRANCH, not of the declaration. A
+   * `light-dark()` compiles to two rules and each publishes what it resolves
+   * to, so a self-referential light branch withholds while a plain dark branch
+   * still publishes — and a descendant under this rule inherits the
+   * grandparent's colour in light mode and blue in dark, which is what the two
+   * branches say.
+   */
+  test("only the self-referential branch of a light-dark() withholds", () => {
+    expect(
+      publishedInheritedColors(
+        `.child { color: light-dark(currentcolor, blue); }`,
+      ),
+    ).toEqual(["#00f"]);
+    expect(
+      publishedInheritedColors(
+        `.child { color: light-dark(red, currentcolor); }`,
+      ),
+    ).toEqual(["#f00"]);
   });
 
   test.each([
@@ -949,8 +989,9 @@ describe("the inherited-color variable is never self-referential", () => {
       ],
     ],
     // light-dark() publishes from its own rule AND from the extra
-    // `prefers-color-scheme: dark` rule it pushes, so the census sees two.
-    ["light-dark(red, blue)", ["#f00", "#f00"]],
+    // `prefers-color-scheme: dark` rule it pushes, so the census sees two —
+    // each branch's own colour, never one branch's twice.
+    ["light-dark(red, blue)", ["#f00", "#00f"]],
   ])(
     "color: %s names a variable that is not the inherited one, so it publishes",
     (value, published) => {

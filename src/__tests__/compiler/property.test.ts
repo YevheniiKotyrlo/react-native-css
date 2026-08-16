@@ -110,7 +110,13 @@ test("a :root declaration and a registered default land in different slots", () 
 `);
 
   const result = compiled.stylesheet();
-  expect(new Map(result.vr).get("my-var")).toStrictEqual([[50]]);
+  // The DECLARED value keeps its unit and the REGISTERED one does not, and the
+  // asymmetry is the two slots doing different jobs. `:root { --my-var: 50px }`
+  // is a token sequence whose meaning depends on the property that reads it, so
+  // the suffix survives for `resolveValue` to read back; `initial-value: 0px`
+  // went through the `<length>` parser the `syntax` descriptor names, which
+  // already answered that question.
+  expect(new Map(result.vr).get("my-var")).toStrictEqual([["50px"]]);
   expect(new Map(result.vi).get("my-var")).toStrictEqual([[0]]);
 });
 
@@ -279,18 +285,29 @@ test("vn carries exactly the properties declared inherits: false", () => {
 });
 
 test("@property without an inherits descriptor never reaches the registry", () => {
-  // syntax and inherits are both required; a rule missing either is invalid
-  // (css-properties-values-api-1). The spec has the invalid rule ignored, while
-  // lightningcss rejects the whole sheet — either way no half-registration exists for
-  // the inherit flag to be guessed from, which is the property this pins
-  expect(() =>
-    compile(`
+  // `syntax` and `inherits` are both required; a rule missing either is invalid
+  // and "must be ignored" (css-properties-values-api-1 §2). Ignored is exactly
+  // what happens — the rule is dropped and its siblings survive, because
+  // `compile()` parses with `errorRecovery` — so no half-registration exists
+  // for the inherit flag to be guessed from, which is the property this pins.
+  //
+  // Both slots, because the registration writes two: `vn` names the properties
+  // that do not inherit, `vi` carries the registered initial values. A rule
+  // that reached the registry would show up in one or the other.
+  const compiled = compile(`
 @property --no-descriptor {
   syntax: "<length>";
   initial-value: 0px;
 }
-`),
-  ).toThrow("Invalid @ rule body");
+`);
+
+  const result = compiled.stylesheet();
+
+  expect(result.vn).toBeUndefined();
+  expect(result.vi).toBeUndefined();
+  expect(compiled.warnings()).toStrictEqual({
+    syntax: ["Invalid @ rule body"],
+  });
 });
 
 test("a non-inheriting property is left to the runtime, however few rules declare it", () => {
@@ -315,7 +332,14 @@ test("a non-inheriting property is left to the runtime, however few rules declar
   expect(JSON.stringify(child)).toContain('"var"');
 });
 
-test("an inheriting property with one declaration is still inlined", () => {
+test("an inheriting property is folded by its scope, not by its inherit flag", () => {
+  // The discriminating twin of the test above: `inherits: true` and one
+  // declaration, and it is STILL left to the runtime. Registering a property as
+  // inheriting says a descendant may read it; it does not say that every
+  // element matching `.child` is a descendant of a `.parent`, which is what
+  // folding `10` in here would assert. Only a universal declaring scope proves
+  // that, and `:root { --folded: 10px }` does fold — `inline-variables.test.ts`
+  // holds that half.
   const compiled = compile(`
 @property --folded {
   syntax: "<length>";
@@ -329,8 +353,7 @@ test("an inheriting property with one declaration is still inlined", () => {
   const result = compiled.stylesheet();
   const child = result.s?.find(([name]) => name === "child");
 
-  expect(JSON.stringify(child)).not.toContain('"var"');
-  expect(JSON.stringify(child)).toContain("10");
+  expect(JSON.stringify(child)).toContain('"var"');
 });
 
 test("@property inherits: true is not recorded", () => {

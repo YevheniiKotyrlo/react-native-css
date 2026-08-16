@@ -292,10 +292,12 @@ test("a quoted string is one token", () => {
 
 test("a ratio keeps its solidus", () => {
   // `reduceParseUnparsed`'s `<ratio>` case: a group of numbers around a `/` is
-  // joined back into one string rather than carried as a list.
+  // joined back into one string rather than carried as a list, in the one
+  // spelling the compiler also produces — whitespace around the solidus is not
+  // part of the value, so the two channels write it the same way.
   expect(
     provided(`.pt-ratio { aspect-ratio: var(--p); }`, "pt-ratio", "16 / 9"),
-  ).toStrictEqual({ aspectRatio: "16 / 9" });
+  ).toStrictEqual({ aspectRatio: "16/9" });
 });
 
 test("a comma separates groups, exactly as it does at compile time", () => {

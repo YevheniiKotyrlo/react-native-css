@@ -1,4 +1,4 @@
-import { processColor } from "react-native";
+import { processColor, StyleSheet } from "react-native";
 
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { Text } from "react-native-css/components/Text";
@@ -412,7 +412,16 @@ describe("inherit", () => {
       </View>,
     );
 
-    expect(screen.getByTestId("label").props.style).toStrictEqual({
+    // Flattened, because the label is handed the colour on two channels and
+    // React Native resolves the array to one value. `<Text>` sets
+    // `inheritsTextStyle`, so `useNativeCss` PREPENDS what it read from the
+    // inherited-property channel before the style the element resolved for
+    // itself — the element's own always wins, and here the two agree. What this
+    // test is about is which colour the label paints, not how many objects it
+    // took to say so.
+    expect(
+      StyleSheet.flatten(screen.getByTestId("label").props.style),
+    ).toStrictEqual({
       color: "#fff",
     });
   });
@@ -597,11 +606,17 @@ describe("inherit", () => {
     });
   });
 
-  test("color: inherit on ::placeholder and ::selection", () => {
+  test("the inherited colour survives a pseudo-element's retarget", () => {
+    // Each pseudo-element reads the inherited colour through the declaration it
+    // can express: `::placeholder { color }` becomes `placeholderTextColor`,
+    // and `::selection { background-color }` becomes `selectionColor`, the band
+    // behind the selected text. `currentcolor` is the spelling that reaches the
+    // variable from a non-`color` property — `inherit` is only the
+    // inherited-colour lookup on `color` itself, which the two cases below pin.
     registerCSS(`
       .parent { color: red; }
       .child::placeholder { color: inherit; }
-      .child::selection { color: inherit; }
+      .child::selection { background-color: currentcolor; }
     `);
 
     render(
@@ -859,22 +874,17 @@ describe("inherit", () => {
       colorScheme.set("dark");
     });
 
-    // KNOWN DIVERGENCE, pinned at the current output rather than at the
-    // CSS-correct one — the same treatment the `rgb(from …)` census entry below
-    // gets. Per CSS the descendant computes to the ancestor's used colour, so
-    // both should be `#00f` here. `light-dark()` instead publishes
-    // --__rn-css-color from its LIGHT branch only: the extra
-    // `prefers-color-scheme: dark` rule carries the dark `color` declaration
-    // beside the light published value.
-    //
-    // It predates this change — it reproduces with the double parse restored —
-    // and it is #420's defect 2, so it is pinned here rather than fixed. Which
-    // of the two lands first decides who updates this expectation.
+    // Both, because a `light-dark()` publishes --__rn-css-color from EACH
+    // branch: the light rule from its own, the extra `prefers-color-scheme:
+    // dark` rule from the dark one. Per CSS the descendant computes to the
+    // ancestor's used colour, and the used colour in dark mode is the dark
+    // branch — so the element and its descendant agree in both schemes, which
+    // is the whole subject of this test.
     expect(screen.getByTestId("parent").props.style).toStrictEqual({
       color: "#00f",
     });
     expect(screen.getByTestId("child").props.style).toStrictEqual({
-      color: "#f00",
+      color: "#00f",
     });
   });
 });
@@ -895,13 +905,16 @@ const selfReferentialMiddleColors: [css: string, midColor: string][] = [
   ["var(--missing, inherit)", "#f00"],
   ["var(--missing, unset)", "#f00"],
   ["var(--missing, currentcolor)", "#f00"],
-  ["color-mix(in srgb, currentcolor, blue)", "rgba(127.5, 0, 127.5, 1)"],
-  ["color-mix(in srgb, inherit, blue)", "rgba(127.5, 0, 127.5, 1)"],
+  // The channels are ROUNDED to integers. React Native reads an `rgba()` string
+  // back with `parseInt`, which TRUNCATES — `127.5` would arrive as `0x7f`
+  // where the compile-time route for the same mix gives `0x80`. Rounding here
+  // is what makes the two routes name one colour.
+  ["color-mix(in srgb, currentcolor, blue)", "rgba(128, 0, 128, 1)"],
+  ["color-mix(in srgb, inherit, blue)", "rgba(128, 0, 128, 1)"],
   ["light-dark(currentcolor, blue)", "#f00"],
-  // Relative colour syntax is not implemented, so the mid colour is the
-  // stringified function rather than a colour. It is here for the crash, and it
-  // pins the current output so that implementing `rgb(from …)` has to update it.
-  ["rgb(from currentcolor r g b)", "rgb(from, #f00, r, g, b)"],
+  // Relative colour syntax restates the origin unchanged when every channel is
+  // named as itself, so `rgb(from currentcolor r g b)` over red is red.
+  ["rgb(from currentcolor r g b)", "rgba(255, 0, 0, 1)"],
 ];
 
 describe("a color that reads the inherited color never publishes itself", () => {

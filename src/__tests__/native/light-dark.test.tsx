@@ -24,13 +24,21 @@ describe("two light-dark() declarations on one rule", () => {
   background-color: light-dark(hsl(120 100% 25% / var(--a)), hsl(60 100% 50% / var(--a)));
 }`;
 
+  /**
+   * The authored `hsl()` arrives as `rgb()`. An unresolved colour keeps its
+   * alpha as a `var()`, and React Native rejects a three-argument `hsla()`, so
+   * the resolved hue/saturation/lightness are converted to sRGB channels an
+   * `rgba()` can carry. It also has to be: React Native's `normalizeColor`
+   * reads no percentage units on the saturation and lightness of a serialised
+   * `hsl(h, s, l)` and returns `null` for the whole declaration.
+   */
   test("light mode takes both light branches", () => {
     registerCSS(css);
     render(<View testID={testID} className="my-class" />);
 
     expect(screen.getByTestId(testID).props.style).toStrictEqual({
-      color: "hsl(0, 100, 50)",
-      backgroundColor: "hsl(120, 100, 25)",
+      color: "rgb(255, 0, 0)",
+      backgroundColor: "rgb(0, 128, 0)",
     });
   });
 
@@ -43,8 +51,8 @@ describe("two light-dark() declarations on one rule", () => {
     });
 
     expect(screen.getByTestId(testID).props.style).toStrictEqual({
-      color: "hsl(240, 100, 50)",
-      backgroundColor: "hsl(60, 100, 50)",
+      color: "rgb(0, 0, 255)",
+      backgroundColor: "rgb(255, 255, 0)",
     });
   });
 });

@@ -43,6 +43,11 @@ describe("the typed path", () => {
   });
 
   test("the `font` shorthand narrows to its first family", () => {
+    // `fontVariant: []` is the shorthand resetting `font-variant` to its
+    // initial value, which css-fonts-4 §5 requires of every longhand the
+    // shorthand does not name, and which React Native spells as the empty list
+    // (`parseFontVariantCaps`). It is beside the point of this test and listed
+    // only because the assertion is exact.
     expect(
       declarationsFor(`.a { font: italic 12px Inter, Helvetica; }`, "a"),
     ).toStrictEqual([
@@ -50,6 +55,7 @@ describe("the typed path", () => {
         fontFamily: "Inter",
         fontSize: 12,
         fontStyle: "italic",
+        fontVariant: [],
         fontWeight: "normal",
       },
     ]);

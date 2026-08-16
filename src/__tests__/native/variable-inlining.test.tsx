@@ -86,14 +86,13 @@ test("a property registered with inherits: false resolves at runtime", () => {
 
   render(<View testID={testID} className="b" />);
 
-  // KNOWN LIMIT, pinned rather than claimed correct. CSS says `--registered`
-  // does not inherit, so `.b` holds the registered initial value 10, not `:root`'s
-  // 20. The compiler now refuses to fold it — the sibling compiler test pins
-  // that — but the runtime carries no notion of a non-inherited custom
-  // property, so it still resolves 20 from the root scope. Modelling
-  // `inherits: false` in the variable store is what closes this, and refusing
-  // the fold is the prerequisite rather than the fix.
-  expect(screen.getByTestId(testID).props.style).toStrictEqual({ width: 20 });
+  // `--registered` does not inherit, so `.b` — which declares it nowhere —
+  // holds the registered initial value 10 rather than the 20 `:root` declares
+  // (css-properties-values-api-1 §2.2). Two things have to agree for that: the
+  // compiler refuses to fold the property, which the sibling compiler test
+  // pins, and the runtime skips the root scope for a name in `vn` and falls
+  // through to the registered initial value.
+  expect(screen.getByTestId(testID).props.style).toStrictEqual({ width: 10 });
 });
 
 test("a runtime write reaches a rule that reads the variable", () => {

@@ -517,8 +517,13 @@ test("::placeholder and the element's own colour stay separate", () => {
   expect(component.props.style).toStrictEqual({ color: "#00f" });
 });
 
-test("::selection colour drives selectionColor", () => {
-  registerCSS(`.sel::selection { color: red; }`);
+test("::selection background colour drives selectionColor", () => {
+  // `background-color`, not `color`. `selectionColor` paints the BAND behind
+  // the selected text, which is what CSS's `::selection { background-color }`
+  // names; its `color` is the selected text itself, and React Native has no
+  // prop for that — so `color` there is dropped rather than inverted onto the
+  // band.
+  registerCSS(`.sel::selection { background-color: red; }`);
 
   const component = render(
     <TextInput testID={testID} className="sel" />,

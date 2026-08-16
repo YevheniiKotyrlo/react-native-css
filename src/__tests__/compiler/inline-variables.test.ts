@@ -42,7 +42,18 @@ function readsAtRuntime(sheet: ReactNativeCssStyleSheet, className: string) {
   return rulesFor(sheet, className).some((rule) => rule.dv === 1);
 }
 
-/** The value the class declares for `--<name>`, or undefined if it declares none. */
+/**
+ * The value the class declares for `--<name>`, or undefined if it declares none.
+ *
+ * A DECLARED length keeps its unit — `--x: 10px` is stored as `"10px"`, not as
+ * `10`. A custom property's value is a token sequence until a property reads
+ * it, and which property reads it decides what a bare number means:
+ * `line-height: 10` is ten times the font size where `line-height: 10px` is ten
+ * pixels. `asDeclaredLength` keeps the suffix so the runtime can still tell
+ * them apart; `resolveValue` reads it back as the number `10` for every
+ * property that wants a length. `foldedValue` below is that other side, and it
+ * is where the number belongs.
+ */
 function declaredValue(
   sheet: ReactNativeCssStyleSheet,
   className: string,
@@ -67,7 +78,7 @@ describe("a variable is folded only where its value is provable", () => {
     expect(foldedValue(sheet, "child", "width")).toBeUndefined();
     expect(readsAtRuntime(sheet, "child")).toBe(true);
     // ...and the declaration has to survive for the runtime to find it.
-    expect(declaredValue(sheet, "parent", "x")).toBe(10);
+    expect(declaredValue(sheet, "parent", "x")).toBe("10px");
   });
 
   test("the same block is provable, and still folds", () => {
@@ -83,7 +94,7 @@ describe("a variable is folded only where its value is provable", () => {
     // separately, which this pass cannot see and must not assume away.
     const sheet = compile(`.a { --x: 10px; width: var(--x); }`).stylesheet();
 
-    expect(declaredValue(sheet, "a", "x")).toBe(10);
+    expect(declaredValue(sheet, "a", "x")).toBe("10px");
   });
 
   test.each([":root", ":host", "*", "html"])(
@@ -206,7 +217,7 @@ describe("a variable's own value is held to the same terms", () => {
       `.a { --y: 10px; --x: var(--y); width: var(--x); }`,
     ).stylesheet();
 
-    expect(declaredValue(sheet, "a", "x")).toBe(10);
+    expect(declaredValue(sheet, "a", "x")).toBe("10px");
     expect(foldedValue(sheet, "a", "width")).toBe(10);
   });
 
@@ -215,7 +226,7 @@ describe("a variable's own value is held to the same terms", () => {
       `:root { --y: 10px; } .a { --x: var(--y); }`,
     ).stylesheet();
 
-    expect(declaredValue(sheet, "a", "x")).toBe(10);
+    expect(declaredValue(sheet, "a", "x")).toBe("10px");
   });
 });
 

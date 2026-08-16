@@ -878,10 +878,12 @@ test("::first-line, ::first-letter and ::marker are dropped silently", () => {
 test("::placeholder and ::selection are re-routed onto React Native props", () => {
   // The two pseudo-elements native DOES model. Rather than a style key, the
   // colour becomes a component prop — `placeholderTextColor` and
-  // `selectionColor`. Note the rewrite is unconditional: it lands on a plain
-  // `View`, which has no use for either.
+  // `selectionColor`. Each takes the declaration that names what the prop
+  // actually paints: the placeholder's own text, and the BAND behind selected
+  // text, which is `background-color` in CSS. Note the rewrite is
+  // unconditional: it lands on a plain `View`, which has no use for either.
   registerCSS(`.field::placeholder { color: blue; }`);
-  registerCSS(`.selectable::selection { color: green; }`);
+  registerCSS(`.selectable::selection { background-color: green; }`);
 
   render(<View testID={testID} className="field" />);
   expect(screen.getByTestId(testID).props.placeholderTextColor).toBe("#00f");

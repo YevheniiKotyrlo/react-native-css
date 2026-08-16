@@ -291,20 +291,22 @@ test("a single text-shadow narrows nothing and says nothing", () => {
  * font-family — React Native has one family, not a fallback stack
  * ---------------------------------------------------------------------- */
 
-test("a font-family stack keeps the first family and reports the fallbacks", () => {
+test("a font-family stack keeps the first family and says nothing", () => {
   const compiled = registerCSS(`
     .cgf-ff-stack { font-family: Georgia, "Times New Roman", serif; }
   `);
 
   // The third narrowing case, and the one with the widest reach: the fallback
   // stack is the whole point of `font-family`, and `TextStyle.fontFamily` is a
-  // `string`. No build-time diagnostic can say whether Georgia exists on the
-  // device, so the warning names what was dropped rather than predicting.
+  // `string`, so every stack reduces to one family.
   expect(styleOfText("cgf-ff-stack")).toStrictEqual({ fontFamily: "Georgia" });
 
-  expect(compiled.warnings()).toStrictEqual({
-    values: { "font-family": ["Times New Roman, serif"] },
-  });
+  // Silently, unlike the other capability gaps in this file. A warning names
+  // something the author can correct, and this one cannot be: React Native
+  // holds one family at any value, so the fallbacks are not a mistake in the
+  // stylesheet. `compiler/font-family.test.ts` carries the same assertion for
+  // every stack spelling.
+  expect(compiled.warnings()).toStrictEqual({});
 });
 
 test("a single font family narrows nothing and says nothing", () => {

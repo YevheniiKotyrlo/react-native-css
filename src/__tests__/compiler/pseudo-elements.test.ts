@@ -172,15 +172,19 @@ describe("::selection", () => {
     });
   });
 
-  test("a custom property the optimization inlines away is not reported", () => {
-    // Declared once, so inlining folds it into its uses and deletes the declaration before any
-    // rule is built. Nothing reached the pseudo-element, so nothing was dropped by it — the
-    // same thing happens to a custom property on a plain rule
+  test("the optimization's setting does not change what is reported", () => {
+    // The same CSS as the first case with the optimization left ON, and the
+    // same answer. Folding a single declaration reaches the declaring block's
+    // own references and deletes nothing — a descendant inherits the property
+    // at runtime, so the declaration has to survive — which means the
+    // pseudo-element still receives it and still has nowhere to put it. What
+    // is reported is the pseudo-element's drop, and it does not depend on
+    // whether the inliner ran
     expect(
       compileFor(`.a::selection { background-color: #ff0000; --brand: blue; }`),
     ).toStrictEqual({
       rules: [{ d: [["#f00", ["selectionColor"]]] }],
-      warnings: {},
+      warnings: { values: { "::selection": ["--brand"] } },
     });
   });
 
@@ -428,9 +432,19 @@ describe("the compiler's own custom properties", () => {
 describe("rules without a pseudo-element", () => {
   test("a plain rule on the same class keeps every field", () => {
     // Control for an over-broad fix: scoping runs per selector, so a rule that reaches the
-    // element directly keeps its static object AND the --__rn-css-color mirror
+    // element directly keeps its static object AND both variables a `color`
+    // declaration publishes — the generic inherited-property channel and the
+    // --__rn-css-color mirror `currentcolor` reads
     expect(compileFor(`.a { color: #ff0000; }`)).toStrictEqual({
-      rules: [{ d: [{ color: "#f00" }], v: [["__rn-css-color", "#f00"]] }],
+      rules: [
+        {
+          d: [{ color: "#f00" }],
+          v: [
+            ["__rn-css-inherit-color", "#f00"],
+            ["__rn-css-color", "#f00"],
+          ],
+        },
+      ],
       warnings: {},
     });
   });

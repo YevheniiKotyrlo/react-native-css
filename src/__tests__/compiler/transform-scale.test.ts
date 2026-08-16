@@ -81,9 +81,10 @@ function scaleComponentsFor(declarations: string): TransformComponent[] {
  * The input census. Every row is a CSS spelling that reaches a scale emitter,
  * paired with the components the compiler must emit for it.
  *
- * `transform: scale3d(...)` is deliberately absent from this table — the
- * compiler drops 3d transforms entirely, so it emits no scale component at all.
- * The `emits no scale component` rows below pin that instead.
+ * `transform: scale3d(...)` belongs here for the same reason `scale: 75% 50% 2`
+ * does: React Native has no z key, so the x and y components are emitted and
+ * the z one is dropped. `scaleZ`, whose ONLY component is the z one, emits
+ * nothing at all — the test below this table pins that.
  *
  * TWO THINGS A ROW HERE CAN FAIL TO OBSERVE, both measured rather than assumed:
  *
@@ -142,6 +143,9 @@ const census: [declarations: string, components: TransformComponent[]][] = [
   ["transform: scaleX(100%);",     [["scaleX", 1]]],
   // Coexisting in one shorthand: neither emitter interferes with the other.
   ["transform: scaleX(75%) scaleY(2);", [["scaleX", 0.75], ["scaleY", 2]]],
+  // `scale3d` is `scale` with a z operand, and reduces to the same two keys.
+  ["transform: scale3d(75%, 50%, 1);",  [["scaleX", 0.75], ["scaleY", 0.5]]],
+  ["transform: scale3d(0.75, 0.5, 1);", [["scaleX", 0.75], ["scaleY", 0.5]]],
 
   // Supplied through a CSS variable. A variable the compiler can resolve to a
   // single value is inlined here, so it lands on the same emitters above rather
@@ -185,15 +189,15 @@ test.each(census)(
   },
 );
 
-test.each([
-  "transform: scale3d(75%, 50%, 1);",
-  "transform: scale3d(0.75, 0.5, 1);",
-  "transform: scaleZ(75%);",
-])("%s emits no scale component at all", (declarations) => {
-  // React Native has no z axis, so no scale component is emitted for these.
-  // Pinned because "emitted nothing" and "emitted a string" are
-  // indistinguishable from a green suite that only asserts the rows it lists.
-  expect(scaleComponentsFor(declarations)).toStrictEqual([]);
+test("transform: scaleZ(75%); emits no scale component at all", () => {
+  // React Native has no z axis, and `scaleZ`'s only component is the z one, so
+  // there is nothing left to emit — not an empty group, which fails
+  // `processTransform`'s "exactly one property per transform object" the same
+  // way two keys do. Pinned because "emitted nothing" and "emitted a string"
+  // are indistinguishable from a green suite that only asserts the rows it
+  // lists, and because it is the control for the `scale3d` rows in the census:
+  // those keep the axes React Native has, this one has none to keep.
+  expect(scaleComponentsFor("transform: scaleZ(75%);")).toStrictEqual([]);
 });
 
 /**

@@ -834,13 +834,13 @@ test("the universal syntax with no initial-value is accepted", () => {
   expect(screen.getByTestId(testID).props.style).toStrictEqual({ width: 78 });
 });
 
-// GAP: CSS Properties and Values API Level 1 §2.2 — `inherits: false` means a
+// CSS Properties and Values API Level 1 §2.2 — `inherits: false` means a
 // descendant that does not declare the property gets the registered
-// INITIAL-VALUE, not the ancestor's value. The `inherits` descriptor is never
-// read (`extractPropertyRule` in `src/compiler/compiler.ts` reads only `name`
-// and `initialValue`), so every registered property inherits. CSS requires
-// `color: red` here.
-test("@property inherits:false still inherits", () => {
+// INITIAL-VALUE, not the ancestor's value. `extractPropertyRule`
+// (`src/compiler/compiler.ts`) records the flag as a `vn` entry and the runtime
+// variable lookup skips the inherited scope for a name it holds, so the
+// ancestor's `blue` never reaches the descendant and the registered `red` does.
+test("@property inherits:false does not inherit", () => {
   registerCSS(`
     @property --pr-noinherit {
       syntax: '<color>';
@@ -859,7 +859,7 @@ test("@property inherits:false still inherits", () => {
   );
 
   expect(screen.getByTestId(testID).props.style).toStrictEqual({
-    color: "blue",
+    color: "#f00",
   });
 });
 

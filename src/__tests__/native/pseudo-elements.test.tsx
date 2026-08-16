@@ -152,9 +152,16 @@ test("::selection { background-color: var() } still resolves an inherited variab
     </View>,
   );
 
+  // `"red"`, not `"#f00"`, and the difference is the ROUTE rather than the
+  // colour: `--x` is declared on `.parent` and read on `.a`, which the inliner
+  // cannot prove reaches the same element, so the value stays a custom property
+  // and arrives as the token text lightningcss stored — and lightningcss writes
+  // `#ff0000` in its shortest form, which is the name. React Native reads both
+  // to the same colour. A value RN's parser would REJECT is the open case here,
+  // and `colors.test.tsx` carries it.
   expect(screen.getByTestId(testID).props).toStrictEqual({
     children: undefined,
-    selectionColor: "#f00",
+    selectionColor: "red",
     style: {},
     testID,
   });

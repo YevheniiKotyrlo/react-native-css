@@ -594,26 +594,49 @@ describe("transform", () => {
       });
     });
 
-    test.each([
-      "transform: scale3d(1, 2, 3);",
-      "transform: scaleZ(2);",
-      "transform: matrix(1, 0, 0, 1, 0, 0);",
-    ])("%s renders no entry rather than an empty one", (declarations) => {
-      // React Native supports none of these, so the compiler emits an empty
-      // group for them. Zero keys fails the same invariant two keys does, which
-      // makes an unsupported transform a crash rather than a no-op.
+    test("transform: scaleZ(2); renders no entry rather than an empty one", () => {
+      // React Native has no z axis and `scaleZ` names nothing else, so it
+      // renders nothing. An empty GROUP would be worse than no entry: zero keys
+      // fails `processTransform`'s "exactly one property per transform object"
+      // the same way two keys do, which turns an unsupported transform into a
+      // render crash rather than a no-op.
       expect(
-        renderTransform(`.my-class { ${declarations} }`, "my-class"),
+        renderTransform(`.my-class { transform: scaleZ(2); }`, "my-class"),
       ).toStrictEqual([]);
     });
 
-    test("an empty group is dropped without taking its neighbour", () => {
-      // The discriminating half of the row above: dropping the whole
+    test("transform: scale3d(1, 2, 3); renders the two axes React Native has", () => {
+      // The z operand is dropped, because there is no `scaleZ` key to put it
+      // on; the x and y ones render exactly as the `scale` shorthand's do, one
+      // key per entry.
+      expect(
+        renderTransform(
+          `.my-class { transform: scale3d(1, 2, 3); }`,
+          "my-class",
+        ),
+      ).toStrictEqual([{ scaleX: 1 }, { scaleY: 2 }]);
+    });
+
+    test("transform: matrix(1, 0, 0, 1, 0, 0); renders the 3x3 React Native takes", () => {
+      // CSS `matrix(a, b, c, d, e, f)` is the 2D affine `[[a c e][b d f][0 0 1]]`,
+      // which column-major is the 9 values below — the identity here.
+      // `processTransform` accepts a length of 9 or 16 and nothing else, so the
+      // expansion is not a choice.
+      expect(
+        renderTransform(
+          `.my-class { transform: matrix(1, 0, 0, 1, 0, 0); }`,
+          "my-class",
+        ),
+      ).toStrictEqual([{ matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1] }]);
+    });
+
+    test("an unsupported transform is dropped without taking its neighbour", () => {
+      // The discriminating half of the `scaleZ` row above: dropping the whole
       // declaration would also produce a valid style, so a supported transform
       // has to survive beside the unsupported one.
       expect(
         renderTransform(
-          `.my-class { transform: translateX(10px) scale3d(1, 2, 3); }`,
+          `.my-class { transform: translateX(10px) scaleZ(2); }`,
           "my-class",
         ),
       ).toStrictEqual([{ translateX: 10 }]);

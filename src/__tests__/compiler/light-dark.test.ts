@@ -128,8 +128,11 @@ describe("an extra rule carries only its own declaration", () => {
   test("the second declaration's dark rule does not re-assert the first's light value", () => {
     const [, backgroundDarkRule] = darkRules(twoUnresolvedDeclarations, "p1");
 
+    // `rgba`, not `hsl`: an unresolved colour converts its resolved channels to
+    // sRGB, because the alpha is still a `var()` and `hsla()` is rejected
+    // three-argument. `hsl(60 100% 50%)` is `rgb(255, 255, 0)`.
     expect(backgroundDarkRule?.d).toStrictEqual([
-      [[{}, "hsl", [60, 100, 50, [{}, "var", "a", 1]]], "backgroundColor", 1],
+      [[{}, "rgba", [255, 255, 0, [{}, "var", "a", 1]]], "backgroundColor", 1],
     ]);
   });
 });
@@ -202,9 +205,18 @@ describe("an extra rule leaves the rest of the rule alone", () => {
   // The variable has to survive compilation to be observable in the output.
   const keepVariables: CompilerOptions = { inlineVariables: false };
 
-  test("the light rule publishes both variables", () => {
+  /**
+   * `--other` keeps its `px` because a custom property's value is a token
+   * sequence until a property reads it. A `color` declaration publishes on two
+   * channels: `--__rn-css-inherit-color`, the generic one every inherited
+   * property writes for `useNativeCss` to replay across a View → Text boundary,
+   * and `--__rn-css-color`, the one `currentcolor` and `color: inherit` resolve
+   * through.
+   */
+  test("the light rule publishes every variable its declarations write", () => {
     expect(lightRule(withOtherVariable, "p5", keepVariables).v).toStrictEqual([
-      ["other", 5],
+      ["other", "5px"],
+      ["__rn-css-inherit-color", "#f00"],
       ["__rn-css-color", "#f00"],
     ]);
   });
@@ -220,7 +232,13 @@ describe("an extra rule leaves the rest of the rule alone", () => {
 
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
-      expect(rule.v).toStrictEqual([["__rn-css-color", "#00f"]]);
+      // Both channels the changed declaration writes, and `--other` on neither
+      // of them: the dark rule restates the `color` it changes and nothing it
+      // does not.
+      expect(rule.v).toStrictEqual([
+        ["__rn-css-inherit-color", "#00f"],
+        ["__rn-css-color", "#00f"],
+      ]);
     }
   });
 });

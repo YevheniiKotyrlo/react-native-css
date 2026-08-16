@@ -1018,10 +1018,10 @@ test("SUSPECTED DEFECT: `gap` with a runtime unit splits into rowGap/columnGap o
 });
 
 /* -------------------------------------------------------------------------- */
-/* DIVERGENCE 6 — aspect-ratio is represented differently (both RN-equivalent) */
+/* DIVERGENCE 6 — aspect-ratio: a whole ratio agrees, a bare number does not   */
 /* -------------------------------------------------------------------------- */
 
-test("aspect-ratio: the two routes emit different shapes that React Native resolves alike", () => {
+test("aspect-ratio: a ratio takes one shape on both routes, a bare number two", () => {
   registerCSS(`
     :root { --ratio-fraction: 16 / 9; --ratio-number: 2; --ratio-one: 1; }
     @media (prefers-color-scheme: dark) {
@@ -1035,16 +1035,21 @@ test("aspect-ratio: the two routes emit different shapes that React Native resol
     .ratio-one-runtime { aspect-ratio: var(--ratio-one); }
   `);
 
-  // SUSPECTED DEFECT (cosmetic): the shapes differ, the meaning does not.
-  //   16 / 9 -> literal "16/9"  runtime "16 / 9"
-  //   2      -> literal "2/1"   runtime 2
-  //   correct per CSS: both. React Native's processAspectRatio splits on "/"
-  //     and trims each side, so all four spellings resolve to the same ratio.
+  // A `<ratio>` takes ONE shape whichever route it arrives by — the runtime
+  // tokeniser serialises it the way the property parser does, so whether the
+  // compiler could fold the variable is not visible in the value.
+  //
+  //   16 / 9 -> literal "16/9"   runtime "16/9"
+  //   2      -> literal "2/1"    runtime 2       <- still two shapes
+  //
+  // The bare number is the one that still differs, and both are correct per
+  // CSS: React Native's processAspectRatio splits on "/" and trims each side,
+  // so every spelling here resolves to the same ratio.
   expect(styleFor("ratio-fraction-literal")).toStrictEqual({
     aspectRatio: "16/9",
   });
   expect(styleFor("ratio-fraction-runtime")).toStrictEqual({
-    aspectRatio: "16 / 9",
+    aspectRatio: "16/9",
   });
 
   expect(styleFor("ratio-number-literal")).toStrictEqual({

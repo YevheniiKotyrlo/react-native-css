@@ -63,16 +63,12 @@ import type { RouteCase } from "../harness";
  */
 
 export const BOX_MODEL_ROUTE_CASES: readonly RouteCase[] = [
-  {
-    property: "aspect-ratio",
-    value: "16 / 9",
-    alternate: "4 / 3",
-    // A spelling difference that renders the same. lightningcss minifies the
-    // ratio to `16/9` on the compile-time routes; the runtime routes carry the
-    // token stream verbatim.
-    divergenceNote:
-      "React Native runs `aspectRatio` through `processAspectRatio` (`ReactNativeStyleAttributes.js:33`), which splits on `/` and trims each side (`processAspectRatio.js:30`), so the compile-time `16/9` and the runtime `16 / 9` both resolve to 1.7777777777777777.",
-  },
+  // No divergence note: every route serialises a `<ratio>` the same way. The
+  // runtime tokeniser mirrors the compiler's `ratioDescriptor` rather than
+  // joining the token stream verbatim, so `16 / 9` is `16/9` whichever route it
+  // arrives by. React Native would read both — `processAspectRatio` splits on
+  // `/` and trims — but the descriptors are what these routes compare.
+  { property: "aspect-ratio", value: "16 / 9", alternate: "4 / 3" },
   { property: "block-size", value: "120px", alternate: "160px" },
   { property: "bottom", value: "12px", alternate: "24px" },
   { property: "box-sizing", value: "border-box", alternate: "content-box" },

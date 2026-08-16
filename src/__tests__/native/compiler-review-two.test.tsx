@@ -246,12 +246,13 @@ test("both block edges are recognised, and both report the same drop", () => {
  * 5. The `font` shorthand's family stack — narrowed in silence
  ****************************************************************************/
 
-test("the font shorthand reports the font families it drops", () => {
+test("the font shorthand narrows its family stack as silently as the longhand", () => {
   // `TextStyle.fontFamily` is one string, so the fallback stack has no
-  // representation and the first family is kept. The longhand says so; the
-  // shorthand took `value.family[0]` directly and said nothing, so the same
-  // narrowing was reported or not depending on how the declaration was
-  // spelled.
+  // representation and the first family is kept. What this pins is that the two
+  // spellings AGREE about saying nothing: both reduce through
+  // `narrowFontFamily`, and a narrowing React Native forces at every value is
+  // not a mistake the author can correct, so neither warns. WHICH family each
+  // one lands on is `compiler/font-family.test.ts` and `native/font-family.test.tsx`.
   const shorthand = compileWithAutoDebug(
     `.font-stack { font: 16px Inter, Helvetica, sans-serif; }`,
   );
@@ -259,12 +260,8 @@ test("the font shorthand reports the font families it drops", () => {
     `.family-stack { font-family: Inter, Helvetica, sans-serif; }`,
   );
 
-  expect(shorthand.warnings()).toStrictEqual({
-    values: { font: ["Helvetica, sans-serif"] },
-  });
-  expect(longhand.warnings()).toStrictEqual({
-    values: { "font-family": ["Helvetica, sans-serif"] },
-  });
+  expect(shorthand.warnings()).toStrictEqual({});
+  expect(longhand.warnings()).toStrictEqual({});
 });
 
 /*****************************************************************************
