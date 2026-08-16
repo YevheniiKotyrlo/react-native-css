@@ -27,7 +27,6 @@ test("nested classes", () => {
               // `color` is an inherited CSS property, so it is published to
               // the subtree alongside the currentcolor variable.
               ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
             ],
             s: [1, 2],
           },
@@ -73,7 +72,6 @@ test("multiple tiers classes", () => {
               // `color` is an inherited CSS property, so it is published to
               // the subtree alongside the currentcolor variable.
               ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
             ],
             s: [1, 3],
           },
@@ -125,7 +123,6 @@ test("tiers with multiple classes", () => {
               // `color` is an inherited CSS property, so it is published to
               // the subtree alongside the currentcolor variable.
               ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
             ],
             s: [1, 4],
           },

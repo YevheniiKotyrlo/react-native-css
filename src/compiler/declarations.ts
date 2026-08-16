@@ -41,6 +41,7 @@ import type {
 
 import {
   containsStyleFunction,
+  INHERITED_COLOR_VARIABLE,
   isStyleDescriptorArray,
   isStyleFunction,
 } from "../utilities";
@@ -1500,25 +1501,32 @@ export function parseUnparsedDeclaration(
       }
     }
   } else {
-    const value = parseUnparsed(declaration.value.value, builder, property);
-
-    builder.addDescriptor(property, value);
-
-    if (property === "color") {
-      // A rule whose colour IS the `__rn-css-color` lookup — `currentcolor`,
-      // and `inherit` / `unset` which resolve through the same variable — must
-      // not publish that variable for its own subtree. Doing so writes a
-      // self-reference that shadows the ancestor's real colour with a lookup
-      // pointing at itself, so `color: inherit` inherits nothing.
-      if (
-        !isStyleFunction(value) ||
-        value[1] !== "var" ||
-        value[2] !== "__rn-css-color"
-      ) {
-        builder.addDescriptor("--__rn-css-color", value);
-      }
-    }
+    // The inherited-colour channel is published by `addDescriptor` along with
+    // every other inherited property, and withheld there when the value reads
+    // the channel back — a `color` rule needs no publish of its own.
+    builder.addDescriptor(
+      property,
+      parseUnparsed(declaration.value.value, builder, property),
+    );
   }
+}
+
+/**
+ * A read of `currentcolor` — the element's own computed `color`, which every
+ * `color` declaration publishes as an inherited property so that each position
+ * defaulting to it reads one value.
+ *
+ * The CASCADING read, on every property including `color`. On `color` itself
+ * the keyword means `inherit` instead, and `StylesheetBuilder.addDescriptor`
+ * re-points it there: doing it at the funnel rather than here is what reaches
+ * the reads this function never returns, such as the one inside a
+ * `light-dark()` dark branch.
+ *
+ * A fresh tuple per call, because a descriptor is owned by the rule it lands
+ * in.
+ */
+function currentColorLookup() {
+  return [{}, "var", INHERITED_COLOR_VARIABLE] as const satisfies StyleFunction;
 }
 
 export function parseCustomDeclaration(
@@ -1845,7 +1853,7 @@ export function parseUnparsed(
     } else if (tokenOrValue === "false") {
       return false;
     } else if (tokenOrValue === "currentcolor") {
-      return [{}, "var", "__rn-css-color"] as const;
+      return currentColorLookup();
     } else {
       return tokenOrValue;
     }
@@ -2052,24 +2060,27 @@ export function parseUnparsed(
           // spellings and have to be recognised as such.
           const keyword = value.toLowerCase();
 
-          // `inherit` on `color` resolves through the same variable
+          // `inherit` on `color` resolves through the same channel
           // `currentcolor` does, and it has to be answered BEFORE the
           // unrenderable-keyword drop below or the declaration disappears.
           // css-color-4 makes `currentcolor` the computed value of `color`
           // itself, and css-cascade makes `unset` compute to `inherit` on an
-          // inherited property — `color` is one. Every colour rule already
-          // publishes `--__rn-css-color` for its subtree, so the lookup is
-          // already there to be read.
+          // inherited property — `color` is one. Every colour declaration
+          // publishes that channel for its subtree, so the lookup is already
+          // there to be read.
           //
-          // Scoped to `color` deliberately: `border-color: inherit` means the
-          // parent's BORDER colour, and answering it with the inherited text
-          // colour would be a confident wrong answer rather than a dropped one.
+          // `inherit` is scoped to `color` deliberately: `border-color:
+          // inherit` means the parent's BORDER colour, and answering it with
+          // the inherited text colour would be a confident wrong answer rather
+          // than a dropped one. `currentcolor` is not scoped, because it means
+          // the element's own colour on every property — `addDescriptor` is
+          // what narrows the read to the inherited context on `color` itself.
           if (
             keyword === "currentcolor" ||
             ((keyword === "inherit" || keyword === "unset") &&
               property === "color")
           ) {
-            return [{}, "var", "__rn-css-color"] as const;
+            return currentColorLookup();
           }
 
           if (UNRENDERABLE_CSS_WIDE_KEYWORDS.has(keyword)) {
@@ -2576,18 +2587,17 @@ export function parseFontColorDeclaration(
   declaration: Extract<Declaration, { value: CssColor }>,
   builder: StylesheetBuilder,
 ) {
-  // The colour is parsed ONCE and used for both descriptors. `parseColor` is
-  // not pure — `light-dark()` registers an extra rule through `addExtraRule` —
-  // so parsing a second time emitted a duplicate, identical dark rule.
-  const value = parseColor(declaration.value, builder);
-  builder.addDescriptor(declaration.property, value);
-
-  if (
-    typeof declaration.value !== "object" ||
-    declaration.value.type !== "currentcolor"
-  ) {
-    builder.addDescriptor("--__rn-css-color", value);
-  }
+  // The colour is parsed ONCE. `parseColor` is not pure — `light-dark()`
+  // registers an extra rule through `addExtraRule` — so parsing a second time
+  // emitted a duplicate, identical dark rule.
+  //
+  // Publishing the colour to the subtree is `addDescriptor`'s job, along with
+  // every other inherited property, so this function exists only for the single
+  // parse.
+  builder.addDescriptor(
+    declaration.property,
+    parseColor(declaration.value, builder),
+  );
 }
 
 export function parseColorDeclaration(
@@ -2652,7 +2662,7 @@ export function parseColor(
 
   switch (cssColor.type) {
     case "currentcolor":
-      return [{}, "var", "__rn-css-color"] as const;
+      return currentColorLookup();
     case "light-dark": {
       const extraRule: StyleRule = {
         s: [],

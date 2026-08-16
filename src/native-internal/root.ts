@@ -1,6 +1,7 @@
 import { Platform, PlatformColor } from "react-native";
 
 import type { StyleDescriptor, VariableValue } from "react-native-css/compiler";
+import { INHERITED_COLOR_VARIABLE } from "react-native-css/utilities";
 
 import { testMediaQuery } from "../native/conditions/media-query";
 import { family, observable, type Observable } from "../native/reactivity";
@@ -84,8 +85,10 @@ function resolveRootRegistries(): {
 
   root("__rn-css-rem").set([[14]]);
 
-  // `__rn-css-color` is the root default behind every `currentcolor`
-  // resolution. On Android, `PlatformColor("?attr/textColorPrimary")` resolves
+  // The inherited-colour channel is the root default behind every
+  // `currentcolor` resolution, and behind every `color: inherit` on an element
+  // with no coloured ancestor.
+  // On Android, `PlatformColor("?attr/textColorPrimary")` resolves
   // to a ColorStateList, which `ColorPropConverter` returns unchecked as though
   // it were an ARGB int — so it never reaches paint as a usable colour, and
   // `ring` / `inset-ring` render nothing while `text-current` is invisible. A
@@ -101,9 +104,9 @@ function resolveRootRegistries(): {
       [PlatformColor("label", "labelColor")],
     ] as unknown as VariableValue[];
 
-    root("__rn-css-color").set(platformLabelColour);
+    root(INHERITED_COLOR_VARIABLE).set(platformLabelColour);
   } else {
-    root("__rn-css-color").set([
+    root(INHERITED_COLOR_VARIABLE).set([
       ["#FFFFFF", [["=", "prefers-color-scheme", "dark"]]],
       ["#000000"],
     ]);

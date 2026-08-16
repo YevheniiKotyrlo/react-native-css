@@ -290,7 +290,7 @@ test("switching colour scheme re-publishes and the descendant follows", () => {
 
 test("a property that exists only under `dark:` starts crossing when the scheme flips", () => {
   // Sharper than the colour case, because `color` already travelled a variable
-  // channel of its own (`__rn-css-color`, for currentcolor) before this
+  // channel of its own, for currentcolor, before this
   // feature. `font-weight` had none, so this is a rule whose match toggles the
   // EXISTENCE of the published variable rather than its value.
   registerCSS(`

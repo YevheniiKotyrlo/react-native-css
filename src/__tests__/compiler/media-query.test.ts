@@ -4,8 +4,8 @@ import { compile } from "react-native-css/compiler";
 // — the media condition in `m` was already exactly right. The suite was skipped
 // because the REST of the expectation had gone stale: colours now serialise
 // short (`#f00`), the specificity tuple changed, and every `color` declaration
-// publishes variables (`__rn-css-color` for currentcolor, plus the inherited
-// twin). A skipped suite hid a working feature.
+// publishes its inherited-property variable. A skipped suite hid a working
+// feature.
 describe("platform media queries", () => {
   test("android", () => {
     const compiled = compile(`
@@ -22,10 +22,7 @@ describe("platform media queries", () => {
             {
               s: [2, 1],
               d: [{ color: "#f00" }],
-              v: [
-                ["__rn-css-inherit-color", "#f00"],
-                ["__rn-css-color", "#f00"],
-              ],
+              v: [["__rn-css-inherit-color", "#f00"]],
               m: [
                 [
                   "&",
@@ -57,10 +54,7 @@ describe("platform media queries", () => {
             {
               s: [2, 1],
               d: [{ color: "#f00" }],
-              v: [
-                ["__rn-css-inherit-color", "#f00"],
-                ["__rn-css-color", "#f00"],
-              ],
+              v: [["__rn-css-inherit-color", "#f00"]],
               m: [
                 [
                   "&",
@@ -94,10 +88,7 @@ test("@media (hover: hover)", () => {
             s: [2, 1],
             d: [{ color: "#f00" }],
             m: [["=", "hover", "hover"]],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
           },
         ],
       ],

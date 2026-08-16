@@ -212,3 +212,51 @@ export function varResolver(
 
   return lookup.kind === "declared" ? lookup.value : resolve(fallback);
 }
+
+/**
+ * The element's resolution options, re-pointed at the scope an INHERITED value
+ * was computed in.
+ *
+ * Dropping `inlineVariables` is not an approximation of the ancestor's scope,
+ * it IS that scope: `rules.ts` hands each child `{ ...inheritedVariables }`
+ * with the element's own `rule.v` assigned over it, so a child's inherited map
+ * is exactly the map its parent resolved against. That matters beyond the name
+ * being looked up, because what comes back is an UNRESOLVED descriptor — the
+ * ancestor published `color: var(--brand)` as the lookup itself — and the
+ * `var()`s inside it name the ancestor's variables, not the descendant's.
+ * Resolving them in the descendant's scope is how `.parent { --brand: red;
+ * color: var(--brand) } .child { --brand: blue; color: inherit }` gave the
+ * child blue.
+ *
+ * The `var()` memo is NOT shared with the cascade scope. The same name
+ * legitimately answers differently in the two — that is what the example above
+ * is — so one memo would hand the second reader the first reader's answer.
+ * `variableHistory` IS shared, because a cycle is a cycle whichever scope each
+ * hop was read in, and materialised here so both objects hold the same set
+ * rather than each lazily making its own.
+ *
+ * Cached on the options, and self-referential, so an `inheritedVar` reached
+ * from inside an already-inherited value stays in the one scope instead of
+ * building an equivalent copy of it at every hop.
+ */
+export function inheritedScopeOptions(
+  options: ResolveValueOptions,
+): ResolveValueOptions {
+  const existing = options.inheritedScope;
+
+  if (existing) {
+    return existing;
+  }
+
+  const scoped: ResolveValueOptions = {
+    ...options,
+    inlineVariables: undefined,
+    resolvedVariables: {},
+    variableHistory: (options.variableHistory ??= new Set<string>()),
+  };
+
+  scoped.inheritedScope = scoped;
+  options.inheritedScope = scoped;
+
+  return scoped;
+}

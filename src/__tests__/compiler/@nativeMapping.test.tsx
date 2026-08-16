@@ -24,10 +24,7 @@ test("@nativeMapping target (nested @media)", () => {
         [
           {
             d: [["#00f", ["test"]]],
-            v: [
-              ["__rn-css-inherit-color", "#00f"],
-              ["__rn-css-color", "#00f"],
-            ],
+            v: [["__rn-css-inherit-color", "#00f"]],
             s: [2, 1],
           },
         ],
@@ -65,10 +62,7 @@ test("@nativeMapping target (nested @media and nested declarations)", () => {
         [
           {
             d: [["#00f", ["test"]]],
-            v: [
-              ["__rn-css-inherit-color", "#00f"],
-              ["__rn-css-color", "#00f"],
-            ],
+            v: [["__rn-css-inherit-color", "#00f"]],
             s: [3, 1],
           },
         ],
@@ -107,10 +101,7 @@ test("@nativeMapping target unparsed", () => {
           {
             d: [["#000", ["test"]]],
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#000"],
-              ["__rn-css-color", "#000"],
-            ],
+            v: [["__rn-css-inherit-color", "#000"]],
           },
         ],
       ],
@@ -149,10 +140,7 @@ test("@nativeMapping value: target", () => {
               },
               ["#00f", ["myBackgroundColor"]],
             ],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [1, 1],
           },
         ],
@@ -195,10 +183,7 @@ test("@nativeMapping value: nested target", () => {
               ["#00f", ["myBackgroundColor", "nested"]],
             ],
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
           },
         ],
       ],
@@ -227,10 +212,7 @@ test("@nativeMapping value: wildcard target", () => {
                 myBackgroundColor: "#00f",
               },
             ],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [1, 1],
           },
         ],
@@ -260,10 +242,7 @@ test("@nativeMapping value: wildcard nested target", () => {
               },
               ["#00f", ["&", "myBackgroundColor", "test"]],
             ],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [1, 1],
           },
         ],
@@ -306,10 +285,7 @@ test("@nativeMapping multiple", () => {
                 myColor: "#f00",
               },
             ],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [1, 1],
           },
         ],
@@ -335,10 +311,7 @@ test("@nativeMapping dot notation shorthand", () => {
         [
           {
             d: [["#f00", ["test", "nested"]]],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [2, 1],
           },
         ],
@@ -376,10 +349,7 @@ test("@nativeMapping dot notation, escaped", () => {
         [
           {
             d: [["#f00", ["test", "nested"]]],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             s: [2, 1],
           },
         ],
