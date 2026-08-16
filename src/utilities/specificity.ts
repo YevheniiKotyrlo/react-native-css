@@ -38,17 +38,19 @@ export const inlineSpecificity: SpecificityArray = [];
 inlineSpecificity[Specificity.Inline] = 1;
 
 /**
- * A slot's rank, with every way of leaving it empty reading as zero.
+ * What a slot is worth. An unset slot is worth nothing, however it is spelled.
  *
- * A specificity array is sparse — a rule states only the slots it uses — and
- * how the empty ones read depends on how the stylesheet travelled. In memory a
- * hole is `undefined`; through Metro, which writes the stylesheet into the
- * bundle as JSON, `JSON.stringify` turns every hole into `null`. Comparing the
- * raw slots therefore found a DIFFERENCE between two rules that both left the
- * slot empty, and returned the `0` that difference computes to — settling the
- * comparison on the first such slot and never reaching the one that decides it.
- * On a device that made an unlayered rule tie with a layered one instead of
- * outranking it; in the tests, which injected the compiler's own object, both
+ * A specificity array is SPARSE: a rule that sets `PseudoElements` never writes
+ * `Important` or `Inline`, so those sit as holes inside the array's length. A
+ * hole reads as `undefined` in memory, and the sheet reaches a native runtime
+ * through `JSON.stringify` (`metro/injection-code.ts`), which has no holes and
+ * writes each one as `null`. Both mean "unset", so both must rank the same.
+ *
+ * Comparing the RAW slots therefore found a difference between two rules that
+ * both left a slot empty and returned the `0` that difference computes to,
+ * settling on the first such slot and never reaching the one that decides. On a
+ * device that made an unlayered rule tie with a layered one instead of
+ * outranking it; in the tests, which inject the compiler's own object, both
  * sides were `undefined` and the bug was invisible.
  */
 const rank = (spec: SpecificityArray, slot: number): number => spec[slot] || 0;
@@ -60,6 +62,9 @@ export const specificityCompareFn = (
   const aSpec = a.s ? a.s : inlineSpecificity;
   const bSpec = b.s ? b.s : inlineSpecificity;
 
+  // Compare the RANKED value, never the raw slot. Branching on the raw slot
+  // while returning a normalised difference is what let `undefined !== null`
+  // enter a branch and answer `0 - 0`.
   for (const slot of [
     Important,
     Inline,
