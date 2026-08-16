@@ -414,7 +414,11 @@ test("overflow keeps its block axis on both routes", () => {
  */
 test("a two-value var() is one component, so an axis shorthand assigns it whole", () => {
   const pairs = [
-    ["border-block-color", "#123456 #654321", ["borderBlockColor"]],
+    [
+      "border-block-color",
+      "#123456 #654321",
+      ["borderTopColor", "borderBottomColor"],
+    ],
     [
       "border-inline-color",
       "#123456 #654321",
@@ -749,8 +753,11 @@ test("the border edge shorthands expand to their own edge's keys on both routes"
   // `borderEndWidth` and `borderStartColor` / `borderEndColor`, React Native's
   // own direction-aware spelling of `border-inline-start` / `-end`. The block
   // axis reaches the physical top and bottom, which is exact because
-  // `direction` never flips it — and its COLOUR is the one part of the axis
-  // React Native does name, so that keeps `borderBlockColor`.
+  // `direction` never flips it. Its COLOUR does have an axis key React Native
+  // names, and deliberately does not use it: the platforms rank
+  // `borderBlockColor` against `borderTopColor` in opposite orders, so one key
+  // set per property is what keeps a later declaration replacing an earlier one
+  // rather than sitting beside it.
   expectBothRoutesAgree([
     {
       property: "border-top",
@@ -778,7 +785,8 @@ test("the border edge shorthands expand to their own edge's keys on both routes"
       expected: {
         borderTopWidth: 2,
         borderBottomWidth: 2,
-        borderBlockColor: "#123456",
+        borderTopColor: "#123456",
+        borderBottomColor: "#123456",
       },
     },
     {

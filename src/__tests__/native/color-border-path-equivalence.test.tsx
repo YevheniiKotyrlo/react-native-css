@@ -976,11 +976,15 @@ describe("per-side and logical `border-*` shorthands", () => {
       "4px",
     );
 
-    // `borderBlockColor` IS a React Native style key, so the colour keeps it.
-    // `borderBlockWidth` and `borderBlockStyle` are not, so the width is
-    // written as `borderTopWidth` + `borderBottomWidth` and the style drops.
+    // Every part of the block axis reaches the PHYSICAL edges. The width and
+    // style have no axis key at all — `borderBlockWidth` and
+    // `borderBlockStyle` are not React Native style keys — and the colour has
+    // one but must not use it: the platforms rank `borderBlockColor` against
+    // `borderTopColor` in opposite orders, so an element carrying both paints
+    // differently on each.
     expectSidesAgree(routes, { borderTopWidth: 2, borderBottomWidth: 2 }, [
-      "borderBlockColor",
+      "borderTopColor",
+      "borderBottomColor",
     ]);
   });
 

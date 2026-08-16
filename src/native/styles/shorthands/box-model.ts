@@ -83,9 +83,19 @@ export const borderColor = repeatShorthandHandler({
   collapseTo: "borderColor",
 });
 
+/**
+ * The block AXIS, which reaches the PHYSICAL edges rather than the axis key.
+ *
+ * `borderBlockColor` does exist in React Native, so collapsing onto it looks
+ * available — but the platforms rank it against `borderTopColor` in opposite
+ * orders (Android `BLOCK_START ?: TOP ?: BLOCK`, iOS assigns
+ * `borderTopColor = _borderBlockColor`), so two declarations that landed on
+ * different key sets would paint differently per platform. `collapseTo` is
+ * therefore deliberately absent, exactly as it is for the inline axis below,
+ * and two equal sides stay two keys.
+ */
 export const borderBlockColor = repeatShorthandHandler({
   positions: ["borderTopColor", "borderBottomColor"],
-  collapseTo: "borderBlockColor",
 });
 
 /**

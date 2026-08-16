@@ -257,13 +257,18 @@ test("the inline border edges reach React Native's `borderStart*` / `borderEnd*`
   }
 });
 
-test("the block axis keeps the one key React Native has for it", () => {
-  // The COLOUR is that key: `borderBlockColor`, `borderBlockStartColor` and
-  // `borderBlockEndColor` are in `ReactNativeStyleAttributes`, in both
-  // `BaseViewConfig`s and in `ViewStyle`, so the axis collapses onto it rather
-  // than writing two edges.
+test("the block axis reaches the physical edges, at every arity", () => {
+  // `borderBlockColor` IS a React Native key, which is what made collapsing
+  // onto it look available. The two platforms rank it against `borderTopColor`
+  // in opposite orders, though — Android reads `BLOCK_START ?: TOP ?: BLOCK`
+  // (`BorderColors.kt`) so the physical edge wins, and iOS assigns
+  // `borderTopColor = _borderBlockColor` (`RCTView.m`) so the axis key wins.
+  // An element carrying both therefore paints a different colour on each
+  // platform, and a one-value declaration collapsing while a two-value one
+  // expanded is exactly how it comes to carry both. One key set, always.
   expect(viewStyle(`.a { border-block-color: red }`, "a")).toStrictEqual({
-    borderBlockColor: "#f00",
+    borderTopColor: "#f00",
+    borderBottomColor: "#f00",
   });
 
   // The WIDTH is not. `borderBlockWidth` lives in `BaseViewConfig.ios.js` and
@@ -302,35 +307,42 @@ test("a per-edge border style is dropped, on either axis", () => {
  * 7. `light-dark()` on the two-edge border-colour shorthands
  ****************************************************************************/
 
-test("`border-block-color: light-dark()` settles the collapse before it parses", () => {
-  // The collapse decides which key `parseColor` is told about, and `parseColor`
-  // uses that key to register the `light-dark()` DARK rule — so a collapse
-  // taken on the parsed values arrives too late. It put the LIGHT value on
-  // `borderBlockColor` while the dark halves were already on `borderTopColor` /
-  // `borderBottomColor`, and in dark mode the element carried all three.
+test("`border-block-color: light-dark()` opens ONE dark rule, over both edges", () => {
+  // Two things are pinned here and they fail differently.
   //
-  // The sources are also the only comparison that separates
-  // `light-dark(#333, #eee)` from `light-dark(#333, #000)`: both halves parse
-  // to `#333`, and only one of those pairs may collapse.
+  // The KEYS: both halves land on the physical edge pair, so the light and the
+  // dark rule address the same two keys. Landing the light half on
+  // `borderBlockColor` while the dark half reached the edges left the element
+  // carrying all three in dark mode.
+  //
+  // The RULE COUNT: `parseColor` is not pure — it registers the dark half
+  // against whatever `descriptorProperties` names at the time — so parsing the
+  // same written value once per edge opens one dark rule per edge. Equal
+  // SOURCES are parsed once against both edges instead, which is why this is
+  // two rules and not three. Comparing sources rather than parsed values is
+  // also the only comparison that keeps `light-dark(#333, #eee)` distinct from
+  // `light-dark(#333, #000)`, whose halves both parse to `#333`.
   const { stylesheet } = compiled(
     `.b { border-block-color: light-dark(#333, #eee) }`,
   );
 
   expect(stylesheet.s?.[0]?.[1]).toStrictEqual([
-    { s: [1, 1], d: [{ borderBlockColor: "#333" }] },
+    { s: [1, 1], d: [{ borderTopColor: "#333", borderBottomColor: "#333" }] },
     {
       s: [1, 1],
-      d: [{ borderBlockColor: "#eee" }],
+      d: [{ borderTopColor: "#eee", borderBottomColor: "#eee" }],
       m: [["=", "prefers-color-scheme", "dark"]],
     },
   ]);
 });
 
-test("`border-inline-color: light-dark()` puts both halves on the same two edges", () => {
-  // The inline axis never collapses — React Native has no key for the pair —
-  // so the fault could not take the same shape here. It is pinned anyway: the
-  // light and dark values have to land on the SAME keys, which is the invariant
-  // the block-axis collapse broke.
+test("`border-inline-color: light-dark()` opens ONE dark rule, over both edges", () => {
+  // The inline axis has no axis key to collapse onto — React Native ships no
+  // `borderInlineColor` — so it could never take the block axis's key-set
+  // fault. It shares the rule-count half exactly, though: one written value
+  // parsed once against both edges is ONE dark rule holding both keys, where
+  // parsing per edge produced two dark rules under the same condition. Both
+  // render the same; one is the honest IR, and it makes the two axes agree.
   const { stylesheet } = compiled(
     `.b { border-inline-color: light-dark(#333, #eee) }`,
   );
@@ -339,12 +351,7 @@ test("`border-inline-color: light-dark()` puts both halves on the same two edges
     { s: [1, 1], d: [{ borderStartColor: "#333", borderEndColor: "#333" }] },
     {
       s: [1, 1],
-      d: [{ borderStartColor: "#eee" }],
-      m: [["=", "prefers-color-scheme", "dark"]],
-    },
-    {
-      s: [1, 1],
-      d: [{ borderEndColor: "#eee" }],
+      d: [{ borderStartColor: "#eee", borderEndColor: "#eee" }],
       m: [["=", "prefers-color-scheme", "dark"]],
     },
   ]);

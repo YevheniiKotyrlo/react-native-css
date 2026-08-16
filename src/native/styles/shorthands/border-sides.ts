@@ -145,23 +145,36 @@ function axisHandler(
   };
 }
 
-// The block AXIS reaches React Native under two different spellings and only
-// the COLOUR half is real. `borderBlockColor`, `borderBlockStartColor` and
-// `borderBlockEndColor` are style attributes on both platforms, so the colour
-// keeps its own key. `borderBlockWidth` and the two per-edge block widths live
-// in `BaseViewConfig.ios.js` and nowhere else, so a width written to them
-// paints on iOS Fabric and vanishes on Android and the old architecture — the
-// physical edges every platform reads carry it instead. `direction` never
-// flips the block axis, so block-start is the top edge and block-end the
-// bottom one on every platform, which makes that exact rather than an
-// approximation.
+// The block AXIS reaches the PHYSICAL edges, both halves.
+//
+// `borderBlockColor` exists as a style attribute on both platforms, which makes
+// writing to it look correct — but the two platforms rank it against
+// `borderTopColor` in OPPOSITE orders, so an element carrying both keys paints
+// a different colour on each. Android reads `BLOCK_START ?: TOP ?: BLOCK`
+// (`BorderColors.kt`), so the physical edge wins; iOS assigns
+// `borderTopColor = _borderBlockColor` whenever the axis key is set
+// (`RCTView.m`), so the axis key wins. A later declaration that collapsed onto
+// the axis key would therefore sit BESIDE an earlier one that expanded to the
+// edges, and which of the two paints would depend on the platform. Emitting one
+// key set — the physical edges, which every platform reads the same way —
+// is what makes the cascade mean the same thing on both.
+//
+// `borderBlockWidth` and the two per-edge block widths live in
+// `BaseViewConfig.ios.js` and nowhere else, so a width written to them paints
+// on iOS Fabric and vanishes on Android and the old architecture — the physical
+// edges carry it for the same reason. `direction` never flips the block axis,
+// so block-start is the top edge and block-end the bottom one on every
+// platform, which makes that exact rather than an approximation.
 export const borderBlock = axisHandler(
   borderSideHandler({
     width: "borderTopWidth",
     style: undefined,
-    color: "borderBlockColor",
+    color: "borderTopColor",
   }),
-  { borderTopWidth: "borderBottomWidth" },
+  {
+    borderTopWidth: "borderBottomWidth",
+    borderTopColor: "borderBottomColor",
+  },
 );
 
 export const borderBlockStart = borderSideHandler({

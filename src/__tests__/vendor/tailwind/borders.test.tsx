@@ -174,7 +174,8 @@ describe("Border - Border Color", () => {
     expect(await renderCurrentTest()).toStrictEqual({
       props: {
         style: {
-          borderBlockColor: "#fff",
+          borderTopColor: "#fff",
+          borderBottomColor: "#fff",
         },
       },
     });
@@ -267,7 +268,8 @@ describe("Border - Border Color", () => {
     ).toStrictEqual({
       props: {
         style: {
-          borderBlockColor: "#fb2c36",
+          borderTopColor: "#fb2c36",
+          borderBottomColor: "#fb2c36",
           color: "#fb2c36",
         },
       },
