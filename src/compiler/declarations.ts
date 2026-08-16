@@ -49,6 +49,7 @@ import type {
   MediaCondition,
   StyleDescriptor,
   StyleFunction,
+  StyleRule,
 } from "./compiler.types";
 import { parseEasingFunction, parseIterationCount } from "./keyframes";
 import { toRNProperty } from "./selector-builder";
@@ -1732,12 +1733,18 @@ function inheritedColorLookup() {
 function publishInheritedColor(
   value: StyleDescriptor,
   builder: StylesheetBuilder,
+  /**
+   * The rule to publish into. Defaults to the one the builder is on, which is
+   * every caller except a `light-dark()` dark branch — that one is a separate
+   * rule the builder has already left by the time the declaration publishes.
+   */
+  rule?: StyleRule,
 ) {
   if (readsInheritedColor(value)) {
     return;
   }
 
-  builder.addDescriptor(`--${INHERITED_COLOR_VARIABLE}`, value);
+  builder.addDescriptor(`--${INHERITED_COLOR_VARIABLE}`, value, false, rule);
 }
 
 /**
@@ -2867,7 +2874,13 @@ export function parseFontColorDeclaration(
   // Parsed once, for the declaration and the published variable both:
   // `light-dark()` pushes an extra `prefers-color-scheme: dark` rule as a side
   // effect, so a second parse emits a second copy of that rule.
-  const value = parseColor(declaration.value, builder);
+  //
+  // The key is passed for the same reason `addColorDescriptor` passes it: it is
+  // the key this value is written to, so it is the key a `light-dark()` dark
+  // branch has to land on. Leaving it out sent the dark branch through
+  // `addUnnamedDescriptor` and the ambient descriptor list instead, which
+  // reaches the style key but not the variable published beside it.
+  const value = parseColor(declaration.value, builder, declaration.property);
 
   builder.addDescriptor(declaration.property, value);
   publishInheritedColor(value, builder);
@@ -2947,12 +2960,21 @@ export function parseColor(
       // `text-shadow` and `border` produced the same shape: the light value on
       // the right key, a junk value on the shorthand key beside it.
       if (lightDarkTarget !== undefined) {
-        builder.addDescriptor(
-          lightDarkTarget,
-          parseColor(cssColor.dark, builder, lightDarkTarget),
-          false,
-          extraRule,
-        );
+        const dark = parseColor(cssColor.dark, builder, lightDarkTarget);
+
+        builder.addDescriptor(lightDarkTarget, dark, false, extraRule);
+
+        // A `color` declaration writes TWICE — the style key, and the variable
+        // `currentcolor` and `color: inherit` read back — and the dark branch
+        // owes descendants both. `publishInheritedColor` writes to the rule the
+        // builder is on, and by the time the declaration's own publish runs the
+        // builder is back on the light rule, so the dark rule is only ever
+        // reachable from here. Without this a descendant resolving
+        // `currentcolor` under `color: light-dark(red, blue)` painted RED in
+        // dark mode while the element itself painted blue.
+        if (lightDarkTarget === "color") {
+          publishInheritedColor(dark, builder, extraRule);
+        }
       } else {
         builder.addUnnamedDescriptor(
           parseColor(cssColor.dark, builder),
@@ -5197,12 +5219,25 @@ export function parseUnresolvedColor(
     }
     case "light-dark": {
       const extraRule = builder.openExtraRule(DARK_COLOR_SCHEME);
-
-      builder.addUnnamedDescriptor(
-        reduceParseUnparsed(color.dark, builder, property, allowAuto, use),
-        false,
-        extraRule,
+      const dark = reduceParseUnparsed(
+        color.dark,
+        builder,
+        property,
+        allowAuto,
+        use,
       );
+
+      builder.addUnnamedDescriptor(dark, false, extraRule);
+
+      // The twin of the parsed path's publish in `parseColor`. A `var()` in
+      // either branch keeps the whole declaration unparsed and routes it here
+      // instead, and the dark rule owes descendants the variable either way —
+      // `color: light-dark(red, var(--d))` publishes the `var(--d)` it resolves
+      // to, not the red the light rule published.
+      if (property === "color") {
+        publishInheritedColor(dark, builder, extraRule);
+      }
+
       return reduceParseUnparsed(
         color.light,
         builder,
