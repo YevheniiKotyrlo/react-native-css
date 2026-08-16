@@ -121,11 +121,31 @@ function testContainerMediaCondition(
         testContainerMediaCondition(query, containerKey, get),
       );
     case "!!": {
-      // MQ5 §2.4.3 boolean context. A container's size features are all
-      // numeric, so the "false" value is zero — a container with no width does
-      // not satisfy `@container (width)`.
+      // MQ5 §2.4.3 boolean context. A container with no width does not satisfy
+      // `@container (width)`, so zero is the false value for a size feature.
+      //
+      // Finiteness is part of that test rather than a guard bolted onto it,
+      // because not every feature here is MEASURED. `aspect-ratio` is computed
+      // — width over height — so a zero-height container yields `Infinity` and
+      // a 0x0 one `NaN`. Both are non-zero, so a plain `!== 0` answers that a
+      // container with no ratio at all satisfies a query about its ratio.
+      //
+      // `orientation` is why the numeric arm cannot simply replace the test: it
+      // answers `"landscape"`, which is true in a boolean context and is not a
+      // number. `undefined` stays UNKNOWN rather than false — a feature this
+      // runtime cannot answer is not a feature that answered no, and only the
+      // three-valued form survives a negation intact.
       const value = getContainerFeatureValue(condition[1], containerKey, get);
-      return value === undefined ? UNKNOWN : value !== 0;
+
+      if (value === undefined) {
+        return UNKNOWN;
+      }
+
+      if (typeof value === "number") {
+        return Number.isFinite(value) && value !== 0;
+      }
+
+      return value !== false && value !== "none";
     }
     case "[]": {
       // `(400px < width < 800px)`. The START comparison reads with the feature

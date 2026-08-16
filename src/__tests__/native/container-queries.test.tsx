@@ -328,6 +328,45 @@ describe("aspect ratio", () => {
   );
 });
 
+describe("boolean context", () => {
+  /**
+   * MQ5 §2.4.3. `@container (feature)` asks whether the feature is true, and
+   * for a size feature that means non-zero — a container with no width does not
+   * satisfy `@container (width)`.
+   *
+   * `aspect-ratio` is the case the plain non-zero test gets wrong, because it is
+   * COMPUTED rather than measured: it is width over height, so a zero-height
+   * container yields `Infinity` and a 0x0 one `NaN`. Both are non-zero, so a
+   * bare `!== 0` reports a satisfied query for a container that has no ratio at
+   * all. Neither value is a ratio any author wrote a rule against.
+   *
+   * The `orientation` row is not filler — it is what fails if the guard is
+   * written as a numeric-only `Number.isFinite(value) && value !== 0`. That
+   * feature answers `"landscape"`, which is truthy and not a number, so the
+   * narrow fix trades this defect for the opposite one.
+   */
+  const cases: [
+    condition: string,
+    size: { width: number; height: number },
+    matches: boolean,
+  ][] = [
+    ["(aspect-ratio)", { width: 500, height: 200 }, true],
+    ["(aspect-ratio)", { width: 500, height: 0 }, false],
+    ["(aspect-ratio)", { width: 0, height: 0 }, false],
+    ["(width)", { width: 500, height: 200 }, true],
+    ["(width)", { width: 0, height: 200 }, false],
+    ["(height)", { width: 500, height: 0 }, false],
+    ["(orientation)", { width: 500, height: 200 }, true],
+  ];
+
+  test.each(cases)(
+    "@container %s against a %o container matches: %s",
+    (condition, size, matches) => {
+      expect(containerQueryMatches(condition, size)).toBe(matches);
+    },
+  );
+});
+
 describe("interval (range pair) conditions", () => {
   /**
    * A 600x200 container, so both bounds of an interval on either axis can be
