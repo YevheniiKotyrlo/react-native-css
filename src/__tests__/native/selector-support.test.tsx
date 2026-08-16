@@ -1345,20 +1345,21 @@ test("@container comparison operators evaluate correctly, boundary included", ()
   }
 });
 
-test("@container logical-size features never match", () => {
-  // Compiles fine...
+test("@container logical-size features resolve to the physical axes", () => {
+  // CSS Containment 3 §3.2 — `inline-size` and `block-size` are the logical
+  // size features, and `container-type: inline-size` is the containment type
+  // most stylesheets use, so a dead `inline-size` would make the common case
+  // silently never match.
+  //
+  // React Native lays out in one writing mode, which is what makes the mapping
+  // exact rather than an approximation: inline is horizontal and block is
+  // vertical, and both axes are already tracked by `containerWidthFamily` /
+  // `containerHeightFamily`.
   expect(
     compiled(`@container (min-inline-size: 100px) { .cls-a { width: 1px; } }`)
       .s?.[0]?.[1]?.[0]?.cq,
   ).toStrictEqual([{ m: [">=", "inline-size", 100] }]);
 
-  // GAP: CSS Containment 3 §3.2 — `inline-size` and `block-size` are the
-  // logical size features, and `container-type: inline-size` is the ONLY
-  // containment type most stylesheets use. `getContainerFeatureValue` returns
-  // `undefined` for both, so the query is dead.
-  // React Native: EXPRESSIBLE — RN is writing-mode-agnostic in practice, so
-  // `inline-size` is `width` and `block-size` is `height`; both values are
-  // already tracked by `containerWidthFamily` / `containerHeightFamily`.
   registerCSS(
     `.cq-i-p { container-type: inline-size; } .cq-i-c { @container (min-inline-size: 1px) { color: red; } }`,
   );
@@ -1370,7 +1371,7 @@ test("@container logical-size features never match", () => {
   fireEvent(screen.getByTestId("cq-i-p"), "layout", {
     nativeEvent: { layout: { width: 500, height: 500 } },
   });
-  expect(styleOf("cq-i-c")).toBeUndefined();
+  expect(styleOf("cq-i-c")).toStrictEqual({ color: "#f00" });
 });
 
 test("@container style() queries are unrepresentable, so they never match", () => {

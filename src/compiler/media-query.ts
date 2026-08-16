@@ -205,11 +205,27 @@ function parseMediaFeatureValue(
           return undefined;
       }
     case "ratio": {
-      // `<ratio>` is `<number> / <number>`, and lightningcss normalises the
-      // single-number form to `[n, 1]`. Comparing it as a plain number is exact:
-      // the runtime computes the viewport's ratio the same way.
-      const [numerator, denominator] = value.value;
-      return denominator === 0 ? undefined : numerator / denominator;
+      // A `<ratio>` is a pair of numbers standing for their quotient, and the
+      // quotient is what both runtimes derive from their two axes. A bare
+      // number parses as a ratio too, so `1` arrives here as `[1, 1]`.
+      const quotient = value.value[0] / value.value[1];
+
+      // A degenerate ratio has no finite quotient, so there is no bound for a
+      // comparison to mean anything against, and it is refused.
+      //
+      // Refusing is not the same as dropping the block: `parseMediaFeatureOperand`
+      // maps this `undefined` to `null`, so the rule is still emitted, carrying
+      // an operand the runtime answers UNKNOWN in either polarity. Emitting the
+      // quotient instead ships a number the bundle cannot carry — `JSON.stringify`
+      // writes `Infinity` and `NaN` as `null` — so the condition would mean one
+      // thing under jest, which hands the stylesheet over in memory, and another
+      // on a device, which reads it back across that serialisation.
+      //
+      // Testing finiteness rather than a zero denominator is what closes the
+      // second half: a zero denominator is only one way to lose the quotient,
+      // and an operand large enough to arrive as `Infinity` reaches this line
+      // with a denominator of 1.
+      return Number.isFinite(quotient) ? quotient : undefined;
     }
     case "env":
   }

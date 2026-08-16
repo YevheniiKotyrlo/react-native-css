@@ -126,10 +126,15 @@ describe("other undecidable container terms are unknown, not false", () => {
     expect(child).toHaveStyle({ color: "#f00" });
   });
 
-  test("not (block-size: 100px) - a feature the runtime cannot measure", () => {
+  test("not (fictional-feature: 100px) - a feature the runtime cannot measure", () => {
+    // NOT a logical size feature: those now resolve to the physical axes, so
+    // every member of `ContainerSizeFeatureId` is measurable and none of them
+    // can demonstrate this arm any more. The `default:` return in
+    // `getContainerFeatureValue` stays reachable only because lightningcss
+    // widens a container feature name to `string`.
     const child = renderContainer(
       `${base}
-       @container not (block-size: 100px) { .child { color: blue; } }`,
+       @container not (fictional-feature: 100px) { .child { color: blue; } }`,
       500,
       200,
     );
@@ -137,10 +142,10 @@ describe("other undecidable container terms are unknown, not false", () => {
     expect(child).toHaveStyle({ color: "#f00" });
   });
 
-  test("not (inline-size > 100px) - an unmeasurable feature in a range", () => {
+  test("not (fictional-feature > 100px) - an unmeasurable feature in a range", () => {
     const child = renderContainer(
       `${base}
-       @container not (inline-size > 100px) { .child { color: blue; } }`,
+       @container not (fictional-feature > 100px) { .child { color: blue; } }`,
       500,
       200,
     );
@@ -148,14 +153,14 @@ describe("other undecidable container terms are unknown, not false", () => {
     expect(child).toHaveStyle({ color: "#f00" });
   });
 
-  test("not (inline-size) - an unmeasurable feature in a boolean context", () => {
-    // `(inline-size)` compiles to `["!!", "inline-size"]`, which is the one
-    // arm a boolean context reaches. The feature has no runtime value, so the
-    // term is unknown; reading the absent value as false instead would make
-    // the negation true.
+  test("not (fictional-feature) - an unmeasurable feature in a boolean context", () => {
+    // `(fictional-feature)` compiles to `["!!", "fictional-feature"]`, which is
+    // the one arm a boolean context reaches. The feature has no runtime value,
+    // so the term is unknown; reading the absent value as false instead would
+    // make the negation true.
     const child = renderContainer(
       `${base}
-       @container not (inline-size) { .child { color: blue; } }`,
+       @container not (fictional-feature) { .child { color: blue; } }`,
       500,
       200,
     );
