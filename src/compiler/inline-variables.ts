@@ -38,19 +38,29 @@ export function inlineVariables(
     layerIds: new Map<string, number>(),
   });
 
+  // A second declaration is a cascade this pass cannot resolve — which of
+  // the two wins depends on the element — so only a property declared
+  // exactly once is ever a candidate. WHERE each candidate may then be
+  // folded is `canFold`'s question, asked per reference below.
+  //
+  // A property registered `inherits: false` reaches the declaring element and
+  // nothing below it, so a consumer in another rule must resolve it at runtime.
+  //
+  // Pruning runs to completion BEFORE anything is flattened, because a value
+  // being flattened reads this same map. Interleaved, a candidate whose turn
+  // came first read a multi-declaration variable that had not been pruned yet
+  // and baked its FIRST declaration in — so `--x: var(--y); width: var(--x)`
+  // written above two competing `--y` rules compiled to the losing one as a
+  // static number, and the same three rules in the other order compiled to a
+  // correct runtime read.
   for (const [name, info] of [...vars]) {
-    // A second declaration is a cascade this pass cannot resolve — which of
-    // the two wins depends on the element — so only a property declared
-    // exactly once is ever a candidate. WHERE each candidate may then be
-    // folded is `canFold`'s question, asked per reference below.
-    //
-    // A property registered `inherits: false` reaches the declaring element and
-    // nothing below it, so a consumer in another rule must resolve it at runtime.
     if (info.count !== 1 || nonInheritedVariables.has(name)) {
       vars.delete(name);
-    } else {
-      flattenVar(name, vars, annotation);
     }
+  }
+
+  for (const name of [...vars.keys()]) {
+    flattenVar(name, vars, annotation);
   }
 
   if (vars.size === 0) {

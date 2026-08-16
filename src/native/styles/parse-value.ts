@@ -315,7 +315,7 @@ function reduceTokens(tokens: RawToken[], mode: ReadMode): StyleDescriptor {
     }
 
     if (mode === "value" && isRatio(group)) {
-      return [group.join(" ")];
+      return [ratioDescriptor(group)];
     }
 
     return [group];
@@ -335,6 +335,23 @@ function isRatio(group: StyleDescriptor[]): group is (string | number)[] {
     group.includes("/") &&
     group.every((item) => item === "/" || typeof item === "number")
   );
+}
+
+/**
+ * A `<ratio>` in the one spelling the compiler's `ratioDescriptor` produces —
+ * no spaces around the solidus, and a square ratio collapsed to `1`.
+ *
+ * This module exists to hand the runtime what the compiler would have handed
+ * it for the same declaration, so the two spellings have to be one spelling.
+ * React Native trims around the solidus (`processAspectRatio`) and reads both
+ * alike, which is exactly why a divergence here goes unnoticed: it is the
+ * DESCRIPTORS that must agree, because a test comparing the two channels is
+ * the only thing that ever looks at them side by side.
+ */
+function ratioDescriptor(group: (string | number)[]): StyleDescriptor {
+  const [width, , height] = group;
+
+  return width === height ? 1 : `${String(width)}/${String(height)}`;
 }
 
 function classify(
