@@ -215,6 +215,38 @@ export type VariableContextValue = Record<string, StyleDescriptor> & {
 };
 
 /**
+ * Normalises the `Record<"--name", value>` shape the two JavaScript channels
+ * into the variable system accept — `vars()` and `<VariableContextProvider />`
+ * — into the unprefixed record the runtime stores.
+ *
+ * An entry with no value produces no key. Variable lookup is presence-keyed
+ * (`name in variables`), so a key holding `undefined` reads as "this variable
+ * is set to nothing" and stops the cascade before the inherited value, the
+ * `:root` value and the `var()` fallback. Absence is how a record spells "no
+ * value"; `"unset"` is how a variable is deliberately cleared.
+ *
+ * `readValue` is a parameter rather than an import because this module is the
+ * one place both channels can share without closing an import cycle, and
+ * reaching for `parseVariableValue` from here would spend exactly the property
+ * that makes it the right home. The callers supply it; the default is identity,
+ * so a channel with nothing to read keeps the plain normalisation.
+ */
+export function toVariableRecord(
+  variables: Record<string, StyleDescriptor>,
+  readValue: (value: StyleDescriptor) => StyleDescriptor = (value) => value,
+): Record<string, StyleDescriptor> {
+  const record: Record<string, StyleDescriptor> = {};
+
+  for (const [name, value] of Object.entries(variables)) {
+    if (value !== undefined) {
+      record[name.replace(/^--/u, "")] = readValue(value);
+    }
+  }
+
+  return record;
+}
+
+/**
  * An `AccessibilityInfo` flag as an observable, seeded from its getter and kept
  * current by its change event — the same shape `colorScheme` uses one line up,
  * so a style recomputes in place when the user changes the setting.

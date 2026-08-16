@@ -5,7 +5,11 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import { VAR_SYMBOL, type VariableContextValue } from "../native/reactivity";
+import {
+  toVariableRecord,
+  VAR_SYMBOL,
+  type VariableContextValue,
+} from "../native/reactivity";
 import { parseVariableValue } from "../native/styles/parse-value";
 import type { CustomPropertyValue } from "../runtime.types";
 import { assignInheritedVariables } from "./root";
@@ -47,12 +51,14 @@ export function VariableContextProvider(
       [VAR_SYMBOL]: true,
     };
 
+    // Through `assignInheritedVariables`, not a spread: a property registered
+    // `inherits: false` is withheld from descendants, and a spread would hand
+    // it to them. That filter is why this call site and `vars()` are no longer
+    // the identical expressions `toVariableRecord` was extracted from — they
+    // now share the normalisation and differ in what they do with it.
     assignInheritedVariables(
       published,
-      Object.entries(props.value).map(
-        ([name, descriptor]) =>
-          [name.replace(/^--/, ""), parseVariableValue(descriptor)] as const,
-      ),
+      Object.entries(toVariableRecord(props.value, parseVariableValue)),
     );
 
     return published;
