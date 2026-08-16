@@ -678,7 +678,8 @@ export class StylesheetBuilder {
       if (inheritedName && publishesVariable) {
         const channel = `${INHERIT_VARIABLE_PREFIX}${inheritedName}`;
 
-        // A value that READS the channel must not be published INTO it. The
+        // A value that READS the channel — directly, or through a custom
+        // property this rule declares — must not be published INTO it. The
         // element hands descendants an unresolved descriptor, so an entry
         // holding its own lookup shadows the ancestor's real value with a
         // reference to itself, and the descendant resolves nothing where CSS
@@ -688,7 +689,7 @@ export class StylesheetBuilder {
         // currentcolor, blue)`) it is a knowing approximation: descendants see
         // the ancestor's value rather than the derived one, which is only
         // fixable once resolution happens in the publisher's own scope.
-        if (!readsVariable(value, channel)) {
+        if (!readsVariable(value, channel, rule.v ?? [])) {
           rule.v ??= [];
           rule.v.push([channel, value]);
         }

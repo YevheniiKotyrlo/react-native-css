@@ -1,4 +1,8 @@
-import type { StyleDescriptor, StyleFunction } from "react-native-css/compiler";
+import type {
+  StyleDescriptor,
+  StyleFunction,
+  VariableDescriptor,
+} from "react-native-css/compiler";
 
 import { INHERITED_VAR_FUNCTION } from "./inheritance";
 
@@ -56,8 +60,7 @@ export function containsStyleFunction(value: StyleDescriptor): boolean {
 }
 
 /**
- * Whether `value` reads the custom property `name` anywhere inside it, through
- * either variable function.
+ * Every custom property `value` reads, at any depth, added to `into`.
  *
  * The read is not always at the top level, which is why this is a walk rather
  * than a test of the first slot: `var(--brand, var(--x))` buries one in a
@@ -67,9 +70,12 @@ export function containsStyleFunction(value: StyleDescriptor): boolean {
  * A style function's other slots are its marker object, its name and the
  * delayed-resolution flag; only the arguments can nest a descriptor.
  */
-export function readsVariable(value: StyleDescriptor, name: string): boolean {
+function collectVariableReads(
+  value: StyleDescriptor,
+  into: Set<string>,
+): Set<string> {
   if (!Array.isArray(value)) {
-    return false;
+    return into;
   }
 
   if (isStyleFunction(value)) {
@@ -77,15 +83,63 @@ export function readsVariable(value: StyleDescriptor, name: string): boolean {
 
     if (value[1] === "var" || value[1] === INHERITED_VAR_FUNCTION) {
       // Both functions take the name alone, or `[name, fallback]`.
-      if ((Array.isArray(args) ? args[0] : args) === name) {
-        return true;
+      const read: unknown = Array.isArray(args) ? args[0] : args;
+
+      if (typeof read === "string") {
+        into.add(read);
       }
     }
 
-    return readsVariable(args, name);
+    return collectVariableReads(args, into);
   }
 
-  return value.some((entry) => readsVariable(entry, name));
+  for (const entry of value) {
+    collectVariableReads(entry, into);
+  }
+
+  return into;
+}
+
+/**
+ * Whether `value` reaches a read of the custom property `name`, following the
+ * custom properties `scope` declares on the way.
+ *
+ * A DIRECT read is the common case but not the only self-reference: in
+ * `.child { --brand: currentcolor; color: var(--brand) }` the declaration reads
+ * `--brand` and `--brand` reads the channel, so the read is one hop away and a
+ * test of the value alone does not see it. Publishing from that rule hands
+ * descendants a lookup that resolves through the element's OWN scope straight
+ * back to itself, and they render nothing where CSS gives them the ancestor's
+ * colour.
+ *
+ * `scope` is the rule's own `v` entries, so the walk follows exactly the
+ * declarations the resolver will and stops where a reference leaves the rule.
+ * Omit it for the single-hop question.
+ */
+export function readsVariable(
+  value: StyleDescriptor,
+  name: string,
+  scope: readonly VariableDescriptor[] = [],
+): boolean {
+  // A Set's iterator visits entries added during iteration, so expanding a
+  // reference in the body queues its own reads onto the same walk. The set is
+  // the cycle guard too: a name already reached is never re-added, and a scope
+  // that references itself terminates rather than recursing.
+  const reads = collectVariableReads(value, new Set());
+
+  for (const read of reads) {
+    if (read === name) {
+      return true;
+    }
+
+    for (const [declared, declaredValue] of scope) {
+      if (declared === read) {
+        collectVariableReads(declaredValue, reads);
+      }
+    }
+  }
+
+  return false;
 }
 
 /**
