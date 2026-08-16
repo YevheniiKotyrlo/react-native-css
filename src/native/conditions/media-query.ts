@@ -125,7 +125,7 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
       // differently. Reading the raw observable alone leaves the class layer
       // matching neither light nor dark whenever it holds a non-scheme: null at
       // rest and after `set(null)`, and `"unspecified"` after a
-      // follow-the-system request on react-native 0.86.
+      // follow-the-system request on react-native 0.82 and later.
       return resolveColorScheme(get(colorScheme));
     // Each of these maps 1:1 onto an `AccessibilityInfo` getter plus its change
     // event.
