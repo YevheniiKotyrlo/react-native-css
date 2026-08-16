@@ -157,7 +157,6 @@ const unparsedRuntimeParsing = new Set([
   "filter",
   "flex",
   "flex-flow",
-  "font-family",
   // A `<percentage>` font size measures against the PARENT's computed size
   // (css-fonts-4 §3.5), and only the consuming property knows that. Written
   // out, `parseFontSize` reads it as the `em` multiplier it is; stored in a

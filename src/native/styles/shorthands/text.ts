@@ -98,16 +98,14 @@ export const textDecorationLine: StyleResolver = (resolve, value) => {
 };
 
 /**
- * `font-family` from a value only known at runtime.
+ * `font-family` has no resolver here, and the absence is load-bearing.
  *
- * CSS writes a fallback STACK and React Native takes one name
- * (`TextStyle.fontFamily` is `string`), so the first family is as much of the
- * declaration as it can hold — which is what the compile-time parser already
- * keeps. Handing over the whole stack instead names a font that does not exist.
+ * React Native's `fontFamily` is one name, never a stack, and the reduction to
+ * it is `narrowFontFamily` (`utilities/font-family.ts`) — flatten, then take
+ * the first USABLE entry. The compiler applies it to every stack it can read;
+ * `applyValue` (`native/objects.ts`) applies it to the one it cannot, the value
+ * a `var()` only supplies at render. A resolver here would be a third
+ * reduction, reached before either of those and taking a naive `[0]`, so
+ * `font-family: 12, Arial` and `font-family: calc(1px), Inter` resolved to
+ * nothing rather than to the family standing behind the unusable head.
  */
-export const fontFamily: StyleResolver = (resolve, value) => {
-  const values = resolveShorthandArguments(resolve, value);
-  const [first] = values ?? [];
-
-  return typeof first === "string" ? first : undefined;
-};
