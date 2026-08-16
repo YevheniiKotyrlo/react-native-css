@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { Appearance, I18nManager, PixelRatio, Platform } from "react-native";
 
 import type {
