@@ -932,6 +932,46 @@ describe("boolean features", () => {
     expect(component.props.style).toStrictEqual({ color: "#00f" });
   });
 
+  test("aspect-ratio matches when the viewport has one", () => {
+    registerCSS(`
+.my-class { color: blue; }
+
+@media (aspect-ratio) {
+  .my-class { color: red; }
+}`);
+
+    act(() => {
+      dimensions.set({ ...dimensions.get(), width: 500, height: 1000 });
+    });
+
+    render(<View testID={testID} className="my-class" />);
+    const component = screen.getByTestId(testID);
+
+    expect(component.props.style).toStrictEqual({ color: "#f00" });
+  });
+
+  test("aspect-ratio does not match a viewport of zero width", () => {
+    // The same geometry the `width` case above uses, and the same answer: a
+    // ratio of 0 is the false value for a numeric feature. `@container
+    // (aspect-ratio)` already answers this way at 0x0 and 0-height, so the two
+    // evaluators have to agree here too.
+    registerCSS(`
+.my-class { color: blue; }
+
+@media (aspect-ratio) {
+  .my-class { color: red; }
+}`);
+
+    act(() => {
+      dimensions.set({ ...dimensions.get(), width: 0, height: 1000 });
+    });
+
+    render(<View testID={testID} className="my-class" />);
+    const component = screen.getByTestId(testID);
+
+    expect(component.props.style).toStrictEqual({ color: "#00f" });
+  });
+
   test("hover matches, because the runtime reports hover", () => {
     registerCSS(`
 .my-class { color: blue; }

@@ -353,6 +353,10 @@ describe("boolean context", () => {
     ["(aspect-ratio)", { width: 500, height: 200 }, true],
     ["(aspect-ratio)", { width: 500, height: 0 }, false],
     ["(aspect-ratio)", { width: 0, height: 0 }, false],
+    // A ratio of plain 0, which is the one degenerate value that is neither
+    // Infinity nor NaN. `media-query.ts` has to answer the same, and the same
+    // row in `media-query.test.tsx` is what holds it there.
+    ["(aspect-ratio)", { width: 0, height: 200 }, false],
     ["(width)", { width: 500, height: 200 }, true],
     ["(width)", { width: 0, height: 200 }, false],
     ["(height)", { width: 500, height: 0 }, false],

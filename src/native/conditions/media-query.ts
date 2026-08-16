@@ -168,9 +168,13 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
 }
 
 /**
- * MQ5 §2.4.3: in boolean context a feature is true unless it holds its own
- * "false" value. Only features that HAVE one appear here; for the rest —
+ * MQ5 §2.4.3: in boolean context a DISCRETE feature is true unless it holds its
+ * own "false" value. Only features that HAVE one appear here; for the rest —
  * `prefers-color-scheme`, `orientation`, `dir` — every value is true.
+ *
+ * Numeric features are not listed, because zero is the false value for every
+ * one of them and a table cannot say that about a feature nobody remembered to
+ * add. `testBooleanContext` decides those by TYPE instead.
  *
  * The whole boolean form used to answer a hard `false`, so `@media (hover)`
  * never matched even though `@media (hover: hover)` did.
@@ -178,15 +182,12 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
 const BOOLEAN_FALSE_VALUE: Record<string, StyleDescriptor> = {
   "any-hover": "none",
   "any-pointer": "none",
-  "height": 0,
   "hover": "none",
   "inverted-colors": "none",
   "pointer": "none",
   "prefers-contrast": "no-preference",
   "prefers-reduced-motion": "no-preference",
   "prefers-reduced-transparency": "no-preference",
-  "resolution": 0,
-  "width": 0,
 };
 
 function testBooleanContext(name: string, get: Getter): MediaVerdict {
@@ -194,6 +195,18 @@ function testBooleanContext(name: string, get: Getter): MediaVerdict {
 
   if (current === undefined) {
     return UNKNOWN;
+  }
+
+  // Zero is the false value for every numeric feature, and finiteness is part
+  // of that test rather than a guard bolted onto it, because not every one of
+  // them is MEASURED. `aspect-ratio` is computed — width over height — so a
+  // viewport with no width answers 0, and one whose dimensions the runtime
+  // never received answers NaN. A table keyed by feature name has to remember
+  // each of them one at a time and silently answers `true` for the one it
+  // forgot; deciding by type cannot forget. `container-query.ts` answers the
+  // same way, and it has to: the two evaluators share the condition language.
+  if (typeof current === "number") {
+    return Number.isFinite(current) && current !== 0;
   }
 
   const falseValue = BOOLEAN_FALSE_VALUE[name];
