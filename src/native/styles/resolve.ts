@@ -6,6 +6,8 @@ import type {
   StyleFunction,
 } from "react-native-css/compiler";
 
+import { INHERITED_VAR_FUNCTION } from "react-native-css/utilities";
+
 import type { RenderGuard } from "../conditions/guards";
 import { type Getter, type VariableContextValue } from "../reactivity";
 import type { calculateProps } from "./calculate-props";
@@ -18,7 +20,11 @@ import { normalizeScaleValue, scaleTransformKeys } from "./scale-value";
 import * as shorthands from "./shorthands";
 import { transformOrigin } from "./transform-origin";
 import { em, rem, vh, vw } from "./units";
-import { varResolver, type ResolvedVariable } from "./variables";
+import {
+  inheritedScopeOptions,
+  varResolver,
+  type ResolvedVariable,
+} from "./variables";
 
 export type SimpleResolveValue = (
   value: StyleDescriptor,
@@ -63,6 +69,12 @@ export type ResolveValueOptions = {
    * what each name IS.
    */
   resolvedVariables?: Record<string, ResolvedVariable>;
+  /**
+   * These same options with the element's own declarations removed — the scope
+   * an inherited value was computed in. Built on first use and cached, by
+   * `inheritedScopeOptions`.
+   */
+  inheritedScope?: ResolveValueOptions;
   /** Pass down to perform recursive calculations and avoid circular dependencies */
   calculateProps?: typeof calculateProps;
 };
@@ -143,6 +155,19 @@ export function resolveValue(
 
       if (name === "var") {
         return varResolver(simpleResolve, value, get, options);
+      } else if (name === INHERITED_VAR_FUNCTION) {
+        // The same lookup, run against the scope the value was inherited from
+        // rather than this element's. Both the name and everything the
+        // descriptor it finds refers to resolve there — see
+        // `inheritedScopeOptions`.
+        const scoped = inheritedScopeOptions(options);
+
+        return varResolver(
+          (value) => resolveValue(value, get, scoped),
+          value,
+          get,
+          scoped,
+        );
       } else if (name in functionResolvers) {
         const fn = functionResolvers[name as keyof typeof functionResolvers];
 

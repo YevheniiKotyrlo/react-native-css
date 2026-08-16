@@ -94,7 +94,8 @@ test("single shadow - without color inherits default", () => {
   render(<View testID={testID} className="test" />);
   const component = screen.getByTestId(testID);
 
-  // Shadows without explicit color inherit the default text color (__rn-css-color)
+  // Shadows without an explicit colour take `currentcolor`, which with no
+  // ancestor colour lands on the root seed.
   expect(component.props.style.boxShadow).toHaveLength(1);
   expect(component.props.style.boxShadow[0]).toMatchObject({
     offsetX: 0,
@@ -158,7 +159,8 @@ test("inset shadow - without color inherits default", () => {
   render(<View testID={testID} className="test" />);
   const component = screen.getByTestId(testID);
 
-  // Shadows without explicit color inherit the default text color (__rn-css-color)
+  // Shadows without an explicit colour take `currentcolor`, which with no
+  // ancestor colour lands on the root seed.
   expect(component.props.style.boxShadow).toHaveLength(1);
   expect(component.props.style.boxShadow[0]).toMatchObject({
     inset: true,

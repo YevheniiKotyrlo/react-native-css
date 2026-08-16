@@ -3,9 +3,12 @@ import type { SelectorList } from "lightningcss";
 import {
   containsStyleFunction,
   INHERIT_VARIABLE_PREFIX,
+  INHERITED_COLOR_VARIABLE,
   postProcessStyleFunction,
+  readsVariable,
   Specificity,
   specificityCompareFn,
+  toInheritedReads,
 } from "../utilities";
 import type {
   AnimationKeyframes,
@@ -635,12 +638,14 @@ export class StylesheetBuilder {
     // `<View className="text-red-500"><Text>x</Text></View>` renders red on
     // web and React Native's default black on native.
     //
-    // The delivery mechanism already exists and is already proven: three
-    // properties publish themselves as variables today (`--__rn-css-color`
-    // for currentcolor, `--__rn-css-em` for em units, `--__rn-css-direction`).
-    // This generalises that same `rule.v` channel to every inherited property,
-    // so descendants can resolve them through the VariableContext they already
-    // consume. `useNativeCss` is the single reader.
+    // The delivery mechanism already exists and is already proven: properties
+    // publish themselves as variables today (`--__rn-css-em` for em units,
+    // `--__rn-css-direction`). This generalises that same `rule.v` channel to
+    // every inherited property, so descendants can resolve them through the
+    // VariableContext they already consume. `useNativeCss` is the single
+    // reader, and `currentcolor` is the second: `color`'s entry here IS the
+    // channel it resolves against, which is why colour needs no channel of its
+    // own.
     //
     // Publishing is inert until something reads it, and it keeps the cascade
     // correct for free: a nearer ancestor's publish already shadows a farther
@@ -657,10 +662,36 @@ export class StylesheetBuilder {
     const publishesVariable = !isRuntimeKeyword(value);
 
     if (this.mode !== "keyframes" && !property.startsWith("--")) {
+      // `currentcolor` on `color` ITSELF is defined as `inherit` (css-color-4
+      // §6.2), and the declaration being computed is the element's own — so the
+      // read has to skip the element's scope, which an ordinary `var()` cannot.
+      // Asked here rather than at each keyword site because every route to a
+      // `color` declaration passes through this one funnel, including the extra
+      // rule a `light-dark()` publishes from inside `parseColor`, which the
+      // declaration's own handler never sees.
+      if (property === "color") {
+        value = toInheritedReads(value, INHERITED_COLOR_VARIABLE);
+      }
+
       const inheritedName = resolveInheritedProperty(property);
+
       if (inheritedName && publishesVariable) {
-        rule.v ??= [];
-        rule.v.push([`${INHERIT_VARIABLE_PREFIX}${inheritedName}`, value]);
+        const channel = `${INHERIT_VARIABLE_PREFIX}${inheritedName}`;
+
+        // A value that READS the channel must not be published INTO it. The
+        // element hands descendants an unresolved descriptor, so an entry
+        // holding its own lookup shadows the ancestor's real value with a
+        // reference to itself, and the descendant resolves nothing where CSS
+        // gives it the ancestor's value. Withholding leaves the ancestor's
+        // entry standing, which is what `inherit` asks for — and for a value
+        // that DERIVES from the inherited one (`color-mix(in srgb,
+        // currentcolor, blue)`) it is a knowing approximation: descendants see
+        // the ancestor's value rather than the derived one, which is only
+        // fixable once resolution happens in the publisher's own scope.
+        if (!readsVariable(value, channel)) {
+          rule.v ??= [];
+          rule.v.push([channel, value]);
+        }
       }
 
       // Asked ONCE, of the property, for every value shape — see

@@ -65,18 +65,17 @@ test("`color: unset` does not republish the variable it reads", () => {
   const { stylesheet } = compiled(`.m { color: unset }`);
   const rule = stylesheet.s?.[0]?.[1]?.[0];
 
-  // The cascade variable `__rn-css-color` is absent, and that absence is the
-  // point: a rule that republished the variable it reads would shadow the
-  // ancestor's colour with a lookup pointing at itself. The inheritance
-  // channel still carries the resolved value down, which is what `unset` on an
-  // inherited property asks for.
-  expect(rule?.v).toStrictEqual([
-    ["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]],
+  // Nothing is published, and that absence is the point: a rule that
+  // republished the channel it reads would shadow the ancestor's colour with a
+  // lookup pointing at itself. Withholding leaves the ancestor's entry
+  // standing, which is what `unset` on an inherited property asks for.
+  expect(rule?.v).toBeUndefined();
+  // The element's own colour is the inherited-scope lookup, so it renders the
+  // ancestor's colour rather than the `null` the bare keyword resolved to —
+  // which React Native reads as transparent, not as an absence.
+  expect(rule?.d).toStrictEqual([
+    [[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1],
   ]);
-  // The element's own colour is the lookup, so it renders the ancestor's
-  // colour rather than the `null` the bare keyword resolved to — which React
-  // Native reads as transparent, not as an absence.
-  expect(rule?.d).toStrictEqual([[[{}, "var", "__rn-css-color"], "color", 1]]);
 });
 
 test("`currentcolor` inside an `unset` rule reads the inherited colour", () => {
@@ -106,8 +105,8 @@ test("`currentcolor` inside an `unset` rule reads the inherited colour", () => {
 
 test("every CSS-wide keyword with no React Native form is dropped with a warning", () => {
   // `inherit` is deliberately absent from this list: on `color` it DOES have a
-  // React Native form — the `__rn-css-color` lookup every colour rule already
-  // publishes — so it resolves rather than being dropped, and the test above
+  // React Native form — an inherited-scope read of the channel every colour
+  // declaration publishes — so it resolves rather than being dropped, and the test above
   // pins that. The three below have nothing to resolve through: `initial`
   // wants a UA stylesheet and `revert` / `revert-layer` want a cascade origin,
   // neither of which React Native has.

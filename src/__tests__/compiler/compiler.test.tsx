@@ -22,10 +22,7 @@ test("hello world", () => {
               },
             ],
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
           },
         ],
       ],
@@ -104,7 +101,7 @@ test(":root CSS variables with media queries", () => {
  * this expectation needs updating for the two things that are already true —
  * `--red` folds into `color` at compile time, so `d` is the literal `#f00`
  * rather than a runtime `var()` and there is no `dv`; and `color` publishes the
- * `__rn-css-inherit-color` / `__rn-css-color` channels. A reader knows the gap
+ * `__rn-css-inherit-color` channel. A reader knows the gap
  * is closed when `compile('.test { --green: green; color: blue; }')` publishes
  * no `green` entry in `v`; today it does.
  */
@@ -219,10 +216,7 @@ test("multiple rules with same selector", () => {
               },
             ],
             s: [2, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
           },
           {
             d: [
@@ -234,10 +228,7 @@ test("multiple rules with same selector", () => {
               h: 1,
             },
             s: [1, 2],
-            v: [
-              ["__rn-css-inherit-color", "#008000"],
-              ["__rn-css-color", "#008000"],
-            ],
+            v: [["__rn-css-inherit-color", "#008000"]],
           },
         ],
       ],
@@ -275,10 +266,7 @@ test("transitions", () => {
             s: [1, 1],
             // `color` publishes react-native-css's two inherited-colour
             // channels beside the style key.
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             // Set by any transition/animation declaration. It is what makes
             // `useNativeCss` wrap the component in reanimated's Animated one.
             a: true,
@@ -487,10 +475,7 @@ test("media query nested in rules", () => {
           {
             d: [{ color: "#f00" }],
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
           },
           {
             d: [
@@ -500,10 +485,7 @@ test("media query nested in rules", () => {
             ],
             m: [[">=", "width", 600]],
             s: [2, 1],
-            v: [
-              ["__rn-css-inherit-color", "#00f"],
-              ["__rn-css-color", "#00f"],
-            ],
+            v: [["__rn-css-inherit-color", "#00f"]],
           },
           {
             d: [{ backgroundColor: "#008000" }],
@@ -541,10 +523,7 @@ test("container queries", () => {
             cq: [{ m: [">", "width", 400] }],
             d: [{ color: "#00f" }],
             s: [2, 1],
-            v: [
-              ["__rn-css-inherit-color", "#00f"],
-              ["__rn-css-color", "#00f"],
-            ],
+            v: [["__rn-css-inherit-color", "#00f"]],
           },
         ],
       ],

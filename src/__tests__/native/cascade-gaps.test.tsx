@@ -176,10 +176,7 @@ test(":root is a universal scope, so its declaration is still inlined", () => {
         [
           {
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             d: [{ color: "#f00" }],
           },
         ],
@@ -201,10 +198,7 @@ test("a universal-selector declaration is still inlined", () => {
         [
           {
             s: [1, 1],
-            v: [
-              ["__rn-css-inherit-color", "#f00"],
-              ["__rn-css-color", "#f00"],
-            ],
+            v: [["__rn-css-inherit-color", "#f00"]],
             d: [{ color: "#f00" }],
           },
         ],

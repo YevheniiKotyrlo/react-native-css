@@ -296,7 +296,6 @@ describe("at-rules and selectors", () => {
     // subtree without a class on the tree at all.
     expect(globalVariables(`:root { color: red; }`, "vr")).toStrictEqual([
       [`${INHERIT_VARIABLE_PREFIX}color`, [["#f00"]]],
-      ["__rn-css-color", [["#f00"]]],
     ]);
   });
 
@@ -331,7 +330,6 @@ describe("at-rules and selectors", () => {
   test("`*` publishes the inherited variable to the universal scope", () => {
     expect(globalVariables(`* { color: red; }`, "vu")).toStrictEqual([
       [`${INHERIT_VARIABLE_PREFIX}color`, [["#f00"]]],
-      ["__rn-css-color", [["#f00"]]],
     ]);
   });
 
@@ -411,7 +409,6 @@ describe("at-rules and selectors", () => {
     expect(sheet.k?.[0]?.[1]?.[0]?.[1]).toStrictEqual([
       {
         color: "#f00",
-        __rnCssColor: "#f00",
         letterSpacing: 2,
         fontSize: 10,
         __rnCssEm: 10,
@@ -496,7 +493,6 @@ describe("declaration-level edge cases", () => {
       variablesFor(`.a { font-size: 24px; color: red; }`).map(([name]) => name),
     ).toStrictEqual([
       `${INHERIT_VARIABLE_PREFIX}color`,
-      "__rn-css-color",
       `${INHERIT_VARIABLE_PREFIX}fontSize`,
       "__rn-css-em",
     ]);
@@ -527,21 +523,21 @@ describe("value forms", () => {
     });
   });
 
-  test("`currentcolor` publishes a reference to the currentcolor variable, not a literal", () => {
-    // `color: currentcolor` means "whatever colour is in scope". Publishing a
-    // literal would freeze the ancestor's colour into the subtree; publishing
-    // the reference lets the descendant resolve it against its OWN scope.
-    // Note the rule does NOT re-publish `__rn-css-color` — that would be a
-    // variable defined as a reference to itself.
-    const names = variablesFor(`.a { color: currentcolor; }`).map(
-      ([name]) => name,
-    );
-
-    expect(names).toStrictEqual([`${INHERIT_VARIABLE_PREFIX}color`]);
-    expect(inheritedFrom(`.a { color: currentcolor; }`).color).toStrictEqual([
-      {},
-      "var",
-      "__rn-css-color",
+  test("`currentcolor` reads the channel and publishes nothing back into it", () => {
+    // On `color` itself the keyword IS `inherit` (css-color-4 §6.2), so the
+    // read has to skip the element's own scope — an ordinary `var()` would
+    // find whatever colour another rule on this same element published and
+    // return that instead of the ancestor's.
+    //
+    // And the rule publishes NOTHING. An entry holding its own lookup shadows
+    // the ancestor's real colour with a reference to itself, so a descendant
+    // resolves nothing where CSS gives it the ancestor's value. Withholding
+    // leaves the ancestor's entry standing, which is what the keyword asks for.
+    expect(
+      variablesFor(`.a { color: currentcolor; }`).map(([name]) => name),
+    ).toStrictEqual([]);
+    expect(rulesFor(`.a { color: currentcolor; }`)[0]?.d).toStrictEqual([
+      [[{}, "inheritedVar", `${INHERIT_VARIABLE_PREFIX}color`], "color", 1],
     ]);
   });
 
@@ -553,11 +549,10 @@ describe("value forms", () => {
     ).toStrictEqual([{}, "var", ["missing", "green"], 1]);
   });
 
-  test("an unresolvable `var()` publishes the reference, and the twin gets the same reference", () => {
-    // Both channels must carry the same unresolved reference — if the
-    // inherited twin were inlined and the legacy one were not, `currentcolor`
-    // in a descendant would disagree with inherited `color` in the same
-    // subtree.
+  test("an unresolvable `var()` publishes the reference rather than a value", () => {
+    // A second definition stops the compiler inlining `--brand`, so what the
+    // ancestor publishes is the lookup itself. The descendant has to resolve
+    // that in the ANCESTOR's scope — `inheritedVar` is what makes it do so.
     const css = `
       :root { --brand: red; }
       @media (prefers-color-scheme: dark) { :root { --brand: blue; } }
@@ -571,20 +566,20 @@ describe("value forms", () => {
       "brand",
       1,
     ]);
-    expect(published[`${INHERIT_VARIABLE_PREFIX}color`]).toStrictEqual(
-      published["__rn-css-color"],
-    );
   });
 
-  test("`color: inherit` reads the inherited variable and does not republish it", () => {
-    // `inherit` resolves through `__rn-css-color`, the same variable
-    // `currentcolor` reads — css-color-4 makes the two identical on `color`.
-    // What it must NOT do is publish that variable for its own subtree: a rule
-    // republishing the variable it reads writes a self-reference that shadows
-    // the ancestor's real colour, so `inherit` would inherit nothing.
+  test("`color: inherit` reads the channel and does not republish it", () => {
+    // `inherit` and `currentcolor` are identical on `color` (css-color-4 §6.2)
+    // and compile to the same read. What the rule must NOT do is publish that
+    // channel for its own subtree: an entry holding its own lookup shadows the
+    // ancestor's real colour with a reference to itself, so `inherit` would
+    // inherit nothing.
     expect(
       variablesFor(`.a { color: inherit; }`).map(([name]) => name),
-    ).toStrictEqual([`${INHERIT_VARIABLE_PREFIX}color`]);
+    ).toStrictEqual([]);
+    expect(rulesFor(`.a { color: inherit; }`)[0]?.d).toStrictEqual(
+      rulesFor(`.a { color: currentcolor; }`)[0]?.d,
+    );
   });
 
   test("`color: initial` publishes nothing", () => {
@@ -627,10 +622,16 @@ describe("value forms", () => {
 });
 
 describe("coexistence with the pre-existing variable channels", () => {
-  test("`color` publishes the inherited twin ALONGSIDE `__rn-css-color`", () => {
+  test("`color` publishes ONE channel, which `currentcolor` also reads", () => {
+    // `color` is an inherited property like any other, so it needs no channel
+    // of its own: the one `addDescriptor` publishes for every inherited
+    // property is the one `currentcolor` resolves against. A second channel
+    // beside it was a second copy of the same value, and the two could
+    // disagree — `font-size` below keeps its `em` twin because that one is a
+    // DIFFERENT value (the resolved pixel size a relative length multiplies),
+    // not a copy.
     expect(variablesFor(`.a { color: red; }`)).toStrictEqual([
       [`${INHERIT_VARIABLE_PREFIX}color`, "#f00"],
-      ["__rn-css-color", "#f00"],
     ]);
   });
 
@@ -755,9 +756,9 @@ describe("mode-gated rules, CSS-wide keywords and unit shapes", () => {
     // One base rule plus one dark rule. The dark rule declares only what it
     // overrides; the base rule supplies everything else, because both apply.
     //
-    // Two, not three: `parseColor` is not pure, so parsing `color` twice —
-    // once for the declaration and once for `--__rn-css-color` — registers a
-    // second extra rule. One parse feeds both channels.
+    // Two, not three: `parseColor` is not pure, so parsing `color` a second
+    // time registers a second extra rule. One parse feeds the declaration and
+    // the publish alike.
     const css = `.a { font-size: 10px; color: light-dark(red, blue); }`;
     const rules = rulesFor(css);
 
@@ -790,16 +791,15 @@ describe("mode-gated rules, CSS-wide keywords and unit shapes", () => {
     // leaves the ancestor's entry in place, which is what the keyword asks for.
     const css = `.a { color: unset; }`;
 
-    // The cascade variable is NOT republished — that is what leaves the
-    // ancestor's entry in place for the descendant to read.
-    expect(variablesFor(css).map(([name]) => name)).toStrictEqual([
-      `${INHERIT_VARIABLE_PREFIX}color`,
-    ]);
-    // And the element's own colour is the lookup, so it renders the ancestor's
-    // colour rather than the `null` the bare keyword used to resolve to —
-    // which React Native reads as transparent, not as an absence.
+    // The channel is NOT republished — that is what leaves the ancestor's
+    // entry in place for the descendant to read.
+    expect(variablesFor(css).map(([name]) => name)).toStrictEqual([]);
+    // And the element's own colour is the inherited-scope lookup, so it
+    // renders the ancestor's colour rather than the `null` the bare keyword
+    // used to resolve to — which React Native reads as transparent, not as an
+    // absence.
     expect(rulesFor(css)[0]?.d).toStrictEqual([
-      [[{}, "var", "__rn-css-color"], "color", 1],
+      [[{}, "inheritedVar", `${INHERIT_VARIABLE_PREFIX}color`], "color", 1],
     ]);
   });
 

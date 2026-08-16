@@ -112,13 +112,14 @@ test("publishing does not disturb the element's own declarations", () => {
   expect(rule?.d).toStrictEqual([{ color: "#f00" }]);
 });
 
-test("the existing currentcolor variable is still published alongside", () => {
-  // `--__rn-css-color` predates this feature and drives `currentcolor`.
-  // Publishing the inherited copy must not replace it.
-  const names = variablesFor(`.a { color: red; }`).map(([name]) => name);
-
-  expect(names).toContain("__rn-css-color");
-  expect(names).toContain(`${INHERIT_VARIABLE_PREFIX}color`);
+test("the currentcolor channel IS the inherited-property channel", () => {
+  // `currentcolor` used to read a variable of its own, published beside the
+  // inherited-property one and holding the same value. One channel, so the two
+  // can never disagree — and so `color: inherit` has a single name to skip the
+  // element's own scope on.
+  expect(
+    variablesFor(`.a { color: red; }`).map(([name]) => name),
+  ).toStrictEqual([`${INHERIT_VARIABLE_PREFIX}color`]);
 });
 
 test("property names are matched case-insensitively", () => {

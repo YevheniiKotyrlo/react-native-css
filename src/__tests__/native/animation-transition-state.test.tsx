@@ -642,15 +642,19 @@ test("a keyframe is filtered by the same property rules as a normal declaration"
   });
 });
 
-// GAP: `color` inside a keyframe also publishes react-native-css's internal
-// currentcolor channel, so the frame handed to reanimated carries a
-// `__rnCssColor` key that no style builder knows.
-test("a color inside a keyframe leaks the internal currentcolor key into the frame", () => {
+// `color` inside a keyframe used to publish a currentcolor channel of its own,
+// which in keyframes mode is not a variable at all — it became a `__rnCssColor`
+// style key in the frame handed to reanimated, which no style builder knows.
+// The channel `color` publishes now is the inherited-property one, and that
+// publish is gated on the builder not being in keyframes mode.
+//
+// `font-size` still leaks its `__rnCssEm` twin the same way; that channel
+// carries a different value rather than a copy of the declaration, so it is a
+// separate gap.
+test("a color inside a keyframe leaves no internal key in the frame", () => {
   expect(
     compile(`@keyframes at-kf-color { from { color: red; } }`).stylesheet().k,
-  ).toStrictEqual([
-    ["at-kf-color", [["from", [{ color: "#f00", __rnCssColor: "#f00" }]]]],
-  ]);
+  ).toStrictEqual([["at-kf-color", [["from", [{ color: "#f00" }]]]]]);
 });
 
 // GAP: `@keyframes` nested in an at-rule is hoisted to the flat, global `k`

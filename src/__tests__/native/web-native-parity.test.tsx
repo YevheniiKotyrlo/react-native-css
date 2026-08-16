@@ -1120,8 +1120,8 @@ test("calc() mixing a percentage with a length drops silently", () => {
 
 test("color: inherit resolves through the inherited-colour variable; initial is dropped", () => {
   // `color: inherit` takes the parent's colour, and there is a mechanism for
-  // exactly that: every colour rule publishes `--__rn-css-color` for its
-  // subtree, which is the same variable `currentcolor` reads. css-color-4
+  // exactly that: every colour declaration publishes its inherited-property
+  // channel for its subtree, which is what `currentcolor` reads. css-color-4
   // makes the two identical on `color`, so `inherit` resolves through it
   // rather than being dropped.
   //
