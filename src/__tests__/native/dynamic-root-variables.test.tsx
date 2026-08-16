@@ -35,10 +35,7 @@ test("a single :root declaration is inlined before the runtime sees it", () => {
           // Two entries, because a `color` declaration publishes the value
           // twice: once under the inherited-property channel every inherited
           // property uses, and once under the name `currentcolor` reads.
-          v: [
-            ["__rn-css-inherit-color", "#123456"],
-            ["__rn-css-color", "#123456"],
-          ],
+          v: [["__rn-css-inherit-color", "#123456"]],
         },
       ],
     ],
@@ -87,10 +84,7 @@ test("dynamicRootVariables keeps the property dynamic", () => {
       s: [4, 1],
       d: [[[{}, "var", "my-var", 1], "color", 1]],
       dv: 1,
-      v: [
-        ["__rn-css-inherit-color", [{}, "var", "my-var", 1]],
-        ["__rn-css-color", [{}, "var", "my-var", 1]],
-      ],
+      v: [["__rn-css-inherit-color", [{}, "var", "my-var", 1]]],
     },
   ]);
 });

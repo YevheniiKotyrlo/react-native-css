@@ -37,7 +37,7 @@ test("resetVariableRegistries keeps the variables the runtime declares itself", 
   // `rem` backs every `em`/`rem` unit, so dropping it would silently resolve
   // every relative length to nothing.
   expect(rootVariables("__rn-css-rem").get()).toBe(14);
-  expect(rootVariables("__rn-css-color").get()).toBeDefined();
+  expect(rootVariables("__rn-css-inherit-color").get()).toBeDefined();
 });
 
 test("a variable injected by one stylesheet does not survive a reset", () => {

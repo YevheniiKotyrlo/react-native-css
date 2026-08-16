@@ -599,9 +599,8 @@ describe("CSS-wide color keywords", () => {
           [
             {
               s: [1, 1],
-              d: [[[{}, "var", "__rn-css-color"], "color", 1]],
+              d: [[[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1]],
               dv: 1,
-              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -631,9 +630,8 @@ describe("CSS-wide color keywords", () => {
           [
             {
               s: [1, 1],
-              d: [[[{}, "var", "__rn-css-color"], "color", 1]],
+              d: [[[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1]],
               dv: 1,
-              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -653,10 +651,7 @@ describe("CSS-wide color keywords", () => {
             {
               s: [1, 1],
               d: [{ color: "#f00" }],
-              v: [
-                ["__rn-css-inherit-color", "#f00"],
-                ["__rn-css-color", "#f00"],
-              ],
+              v: [["__rn-css-inherit-color", "#f00"]],
             },
           ],
         ],
@@ -758,7 +753,7 @@ describe("CSS-wide color keywords", () => {
           [
             {
               s: [1, 1],
-              d: [[[{}, "var", "__rn-css-color"], "borderColor", 1]],
+              d: [[[{}, "var", "__rn-css-inherit-color"], "borderColor", 1]],
               dv: 1,
             },
           ],
@@ -775,9 +770,8 @@ describe("CSS-wide color keywords", () => {
           [
             {
               s: [1, 1, 1],
-              d: [[[{}, "var", "__rn-css-color"], "color", 1]],
+              d: [[[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1]],
               dv: 1,
-              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -798,9 +792,8 @@ describe("CSS-wide color keywords", () => {
             {
               s: [2, 1],
               m: [[">=", "width", 100]],
-              d: [[[{}, "var", "__rn-css-color"], "color", 1]],
+              d: [[[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1]],
               dv: 1,
-              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
             },
           ],
         ],
@@ -818,9 +811,8 @@ describe("CSS-wide color keywords", () => {
           [
             {
               s: [1, 2],
-              d: [[[{}, "var", "__rn-css-color"], "color", 1]],
+              d: [[[{}, "inheritedVar", "__rn-css-inherit-color"], "color", 1]],
               dv: 1,
-              v: [["__rn-css-inherit-color", [{}, "var", "__rn-css-color"]]],
               p: { h: 1 },
             },
           ],
@@ -830,20 +822,29 @@ describe("CSS-wide color keywords", () => {
   });
 
   test.each([
-    ["placeholder", "color: inherit", "placeholderTextColor"],
-    ["selection", "background-color: currentcolor", "selectionColor"],
+    ["placeholder", "color: inherit", "placeholderTextColor", "inheritedVar"],
+    ["selection", "background-color: currentcolor", "selectionColor", "var"],
   ])(
     "the inherited-color lookup survives ::%s's retarget onto %s",
-    (pseudoElement, declaration, targetProp) => {
+    (pseudoElement, declaration, targetProp, lookup) => {
       // A pseudo-element rule retargets the declaration off `style`, so the
       // inherited-color lookup has to survive the retarget. Each retargets the
       // one declaration its React Native prop can express — `selectionColor`
       // paints the band behind the selected text, which is `background-color`
       // — and `currentcolor` is how a non-`color` property spells a read of the
       // inherited colour.
+      //
+      // The two spell that read with different FUNCTIONS, and the difference is
+      // the point of the retarget surviving at all: `color: inherit` must read
+      // the inherited scope ALONE, because the element's own `color` is the
+      // value being resolved and reading it would resolve into itself.
+      // `background-color` has no such self-reference, so it reads the ordinary
+      // scope and sees the element's own colour first.
       expect(
         declarationsFor(`.child::${pseudoElement} { ${declaration} }`),
-      ).toStrictEqual([[[{}, "var", "__rn-css-color"], [targetProp], 1]]);
+      ).toStrictEqual([
+        [[{}, lookup, "__rn-css-inherit-color"], [targetProp], 1],
+      ]);
     },
   );
 
@@ -876,7 +877,7 @@ function publishedInheritedColors(css: string): StyleDescriptor[] {
   return (compile(css).stylesheet().s ?? []).flatMap(([, ruleSet]) =>
     ruleSet.flatMap((rule) =>
       (rule.v ?? [])
-        .filter(([name]) => name === "__rn-css-color")
+        .filter(([name]) => name === "__rn-css-inherit-color")
         .map(([, value]) => value),
     ),
   );

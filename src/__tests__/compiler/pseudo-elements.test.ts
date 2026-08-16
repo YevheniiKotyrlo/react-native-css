@@ -432,17 +432,14 @@ describe("the compiler's own custom properties", () => {
 describe("rules without a pseudo-element", () => {
   test("a plain rule on the same class keeps every field", () => {
     // Control for an over-broad fix: scoping runs per selector, so a rule that reaches the
-    // element directly keeps its static object AND both variables a `color`
-    // declaration publishes — the generic inherited-property channel and the
-    // --__rn-css-color mirror `currentcolor` reads
+    // element directly keeps its static object AND the variable a `color`
+    // declaration publishes — the generic inherited-property channel, which is
+    // also what `currentcolor` and `color: inherit` now read
     expect(compileFor(`.a { color: #ff0000; }`)).toStrictEqual({
       rules: [
         {
           d: [{ color: "#f00" }],
-          v: [
-            ["__rn-css-inherit-color", "#f00"],
-            ["__rn-css-color", "#f00"],
-          ],
+          v: [["__rn-css-inherit-color", "#f00"]],
         },
       ],
       warnings: {},
@@ -486,7 +483,7 @@ describe("field policy", () => {
     const populated: StyleRule = {
       s: [1, 1],
       d: [["#f00", "backgroundColor"]],
-      v: [["__rn-css-color", "#f00"]],
+      v: [["__rn-css-inherit-color", "#f00"]],
       c: ["c:foo"],
       dv: 1,
       a: true,

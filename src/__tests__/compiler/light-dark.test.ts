@@ -158,9 +158,9 @@ describe("an extra rule publishes its own inherited colour", () => {
   const lightDarkColor = `.p3 { color: light-dark(red, blue); }`;
 
   test("the light rule publishes the light colour", () => {
-    expect(variable(lightRule(lightDarkColor, "p3"), "__rn-css-color")).toBe(
-      "#f00",
-    );
+    expect(
+      variable(lightRule(lightDarkColor, "p3"), "__rn-css-inherit-color"),
+    ).toBe("#f00");
   });
 
   /**
@@ -170,7 +170,7 @@ describe("an extra rule publishes its own inherited colour", () => {
    */
   test("no dark rule publishes the light colour", () => {
     const published = darkRules(lightDarkColor, "p3").map((rule) =>
-      variable(rule, "__rn-css-color"),
+      variable(rule, "__rn-css-inherit-color"),
     );
 
     expect(published.length).toBeGreaterThan(0);
@@ -179,7 +179,7 @@ describe("an extra rule publishes its own inherited colour", () => {
 
   test("a dark rule publishes the dark colour", () => {
     const published = darkRules(lightDarkColor, "p3").map((rule) =>
-      variable(rule, "__rn-css-color"),
+      variable(rule, "__rn-css-inherit-color"),
     );
 
     expect(published).toContain("#00f");
@@ -193,7 +193,7 @@ describe("an extra rule publishes its own inherited colour", () => {
 
   test("an unresolved dark branch publishes itself, not the light colour", () => {
     const published = darkRules(unresolvedLightDarkColor, "p4").map((rule) =>
-      variable(rule, "__rn-css-color"),
+      variable(rule, "__rn-css-inherit-color"),
     );
 
     expect(published).toStrictEqual([[{}, "var", "d", 1]]);
@@ -207,17 +207,16 @@ describe("an extra rule leaves the rest of the rule alone", () => {
 
   /**
    * `--other` keeps its `px` because a custom property's value is a token
-   * sequence until a property reads it. A `color` declaration publishes on two
-   * channels: `--__rn-css-inherit-color`, the generic one every inherited
+   * sequence until a property reads it. A `color` declaration publishes on ONE
+   * channel: `--__rn-css-inherit-color`, the generic one every inherited
    * property writes for `useNativeCss` to replay across a View → Text boundary,
-   * and `--__rn-css-color`, the one `currentcolor` and `color: inherit` resolve
-   * through.
+   * and — since the inherited scope became the only scope `inherit` reads — the
+   * one `currentcolor` and `color: inherit` resolve through as well.
    */
   test("the light rule publishes every variable its declarations write", () => {
     expect(lightRule(withOtherVariable, "p5", keepVariables).v).toStrictEqual([
       ["other", "5px"],
       ["__rn-css-inherit-color", "#f00"],
-      ["__rn-css-color", "#f00"],
     ]);
   });
 
@@ -232,13 +231,9 @@ describe("an extra rule leaves the rest of the rule alone", () => {
 
     expect(rules.length).toBeGreaterThan(0);
     for (const rule of rules) {
-      // Both channels the changed declaration writes, and `--other` on neither
-      // of them: the dark rule restates the `color` it changes and nothing it
-      // does not.
-      expect(rule.v).toStrictEqual([
-        ["__rn-css-inherit-color", "#00f"],
-        ["__rn-css-color", "#00f"],
-      ]);
+      // The channel the changed declaration writes, and `--other` not on it:
+      // the dark rule restates the `color` it changes and nothing it does not.
+      expect(rule.v).toStrictEqual([["__rn-css-inherit-color", "#00f"]]);
     }
   });
 });
@@ -272,13 +267,13 @@ describe("an extra rule publishes nothing it does not change", () => {
     ["an unresolved colour", unresolved, "p7"],
   ])("%s: no dark rule republishes the light colour", (_, css, className) => {
     const published = darkRules(css, className).map((rule) =>
-      variable(rule, "__rn-css-color"),
+      variable(rule, "__rn-css-inherit-color"),
     );
 
     expect(published.length).toBeGreaterThan(0);
     // Structural, not identity: an unresolved colour publishes an object.
     expect(published).not.toContainEqual(
-      variable(lightRule(css, className), "__rn-css-color"),
+      variable(lightRule(css, className), "__rn-css-inherit-color"),
     );
   });
 
@@ -299,7 +294,7 @@ describe("an extra rule publishes nothing it does not change", () => {
 
   test("a parsed colour: a dark rule publishes the dark colour", () => {
     const published = darkRules(resolved, "p6").map((rule) =>
-      variable(rule, "__rn-css-color"),
+      variable(rule, "__rn-css-inherit-color"),
     );
 
     expect(published).toContain("#00f");
