@@ -543,6 +543,16 @@ function flattenVar(
   annotation: Annotation,
   seen: Set<string> = new Set<string>(),
 ) {
+  /**
+   * The compile-time counterpart of the resolution stack in
+   * `native/styles/variables.ts`. Substituting a variable into its readers
+   * follows the same references, so a self-referential value recurses here
+   * with no base case — this drops the name instead, which leaves the
+   * reference unsubstituted and hands the cycle to the runtime guard.
+   *
+   * A variable declared more than once is never inlined, so it reaches the
+   * runtime guard without passing through here at all.
+   */
   if (seen.has(name)) {
     vars.delete(name);
   }
