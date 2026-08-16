@@ -11,6 +11,7 @@ import {
   type PropertyRule,
   type Rule,
   type Visitor,
+  type Warning,
 } from "lightningcss";
 
 import { maybeMutateReactNativeOptions, parsePropAtRule } from "./atRules";
@@ -46,58 +47,58 @@ const isAbsoluteUnit = (
 ): unit is keyof typeof ABSOLUTE_UNIT_PIXELS => unit in ABSOLUTE_UNIT_PIXELS;
 
 /**
- * The exact diagnostics lightningcss raises about this library's OWN at-rules.
- *
- * `@nativeMapping` is deliberately read as an `unknown` rule by `./atRules.ts`
- * rather than declared through `customAtRules`, so lightningcss reports it as
- * unrecognised. That is a fact about this vocabulary, not a diagnostic about the
- * author's stylesheet.
- *
- * Matched WHOLE, not as a substring. lightningcss quotes the author's own text
- * in its messages, so a substring test swallowed real diagnostics that merely
- * mentioned the name — including the one case that most needs reporting, a typo
- * in this library's own at-rule (`@nativeMapping-typo` → "Unknown at rule:
- * @nativeMapping-typo"), and any malformed `url()` whose path contains
- * `react-native`.
- */
-const OWN_AT_RULE_WARNINGS =
-  /^Unknown at rule: @(nativeMapping|react-native)$/u;
-
-/**
- * Surface what lightningcss recovered from.
- *
- * `errorRecovery: true` turns a stylesheet-fatal parse error into a dropped
- * rule, which is what CSS asks for — but discarding lightningcss's warnings
- * leaves a stylesheet with a real syntax error compiling to a SMALLER
- * stylesheet with no diagnostic anywhere.
- */
-function reportSyntaxWarnings(
-  warnings: { message: string }[],
-  builder: StylesheetBuilder,
-  reported: Set<string>,
-) {
-  for (const warning of warnings) {
-    // The second pass reads the FIRST pass's serialised output, so a source
-    // problem that survives serialisation is diagnosed twice for one cause.
-    // The author has one mistake and should see one message.
-    if (
-      OWN_AT_RULE_WARNINGS.test(warning.message) ||
-      reported.has(warning.message)
-    ) {
-      continue;
-    }
-    reported.add(warning.message);
-    builder.addSyntaxWarning(warning.message);
-  }
-}
-
-/**
  * Converts a CSS file to a collection of style declarations that can be used with the StyleSheet API
  *
  * @param code - The CSS file contents
  * @param options - Compiler options
  * @returns A `ReactNativeCssStyleSheet` that can be passed to `StyleSheet.register` or used with a custom runtime
  */
+/**
+ * The two at-rules this package defines itself.
+ *
+ * lightningcss calls both unknown because they are ours — `@react-native` is a
+ * registered `customAtRules` entry and `@nativeMapping` is handled as an
+ * unknown rule (`atRules.ts`). Reporting them would fire the channel on every
+ * stylesheet this compiler is designed to read.
+ *
+ * ANCHORED, never a substring test. lightningcss puts the offending name in its
+ * message, so a substring match swallows real diagnostics that merely mention
+ * one — including the case that most needs reporting, a typo in this library's
+ * own at-rule (`@nativeMapping-typo` produces "Unknown at rule:
+ * @nativeMapping-typo"), and any malformed `url()` whose path contains
+ * `react-native`.
+ */
+const OWN_AT_RULE_WARNINGS = /^Unknown at rule: @(nativeMapping|react-native)$/u;
+
+/**
+ * Hand lightningcss's own parse diagnostics to the builder.
+ *
+ * These are the recovered-and-warned class: input lightningcss could not parse
+ * but did not throw over. It passes the malformed sheet through verbatim, so
+ * nothing fails — this package's visitor simply finds nothing to extract and
+ * the rule disappears. That makes this warning the ONLY signal the author has.
+ *
+ * Only the FIRST pass is read. The second re-parses the first's output, and
+ * measured against both reachable triggers it returns the identical message —
+ * so reading it would add nothing but a duplicate to suppress. An unknown
+ * at-rule and an unrecognised pseudo-element each warn once per pass, with the
+ * same text.
+ *
+ * Deliberately NOT paired with lightningcss's `errorRecovery` flag. That
+ * converts the throwing class into more of this one, which is a change to what
+ * compiles rather than a diagnostic — and it drops more than it reports.
+ */
+function reportSyntaxWarnings(
+  builder: StylesheetBuilder,
+  warnings: Warning[] | undefined,
+): void {
+  for (const warning of warnings ?? []) {
+    if (!OWN_AT_RULE_WARNINGS.test(warning.message)) {
+      builder.addSyntaxWarning(warning.message);
+    }
+  }
+}
+
 export function compile(code: Buffer | string, options: CompilerOptions = {}) {
   const { logger = defaultLogger } = options;
 
@@ -269,8 +270,6 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
     errorRecovery: true,
   });
 
-  const reportedSyntaxWarnings = new Set<string>();
-  reportSyntaxWarnings(firstPassWarnings, builder, reportedSyntaxWarnings);
 
   if (isLoggerEnabled) {
     const MAX_LOG_SIZE = 100 * 1024; // 100KB
@@ -331,7 +330,7 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
     },
   };
 
-  const { warnings: secondPassWarnings } = lightningcss({
+  lightningcss({
     code: firstPass,
     visitor,
     filename: options.filename ?? "style.css",
@@ -339,7 +338,7 @@ export function compile(code: Buffer | string, options: CompilerOptions = {}) {
     errorRecovery: true,
   });
 
-  reportSyntaxWarnings(secondPassWarnings, builder, reportedSyntaxWarnings);
+  reportSyntaxWarnings(builder, firstPassWarnings);
 
   return {
     stylesheet: () => builder.getNativeStyleSheet(),

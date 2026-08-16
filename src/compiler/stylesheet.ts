@@ -273,7 +273,7 @@ export class StylesheetBuilder {
       warningProperties: string[];
       warningValues: Record<string, unknown[]>;
       warningFunctions: string[];
-      syntaxWarnings: string[];
+      syntaxWarnings: Set<string>;
     } = {
       ruleSets: {},
       rem: 14,
@@ -281,7 +281,7 @@ export class StylesheetBuilder {
       warningProperties: [],
       warningValues: {},
       warningFunctions: [],
-      syntaxWarnings: [],
+      syntaxWarnings: new Set(),
     },
     private selectors: SelectorList = [],
     /**
@@ -448,14 +448,20 @@ export class StylesheetBuilder {
   /**
    * A diagnostic from lightningcss itself, rather than from a parser here.
    *
-   * `errorRecovery: true` turns a stylesheet-fatal parse error into a dropped
-   * rule, which is what CSS asks for — but lightningcss reports what it
-   * recovered from in `result.warnings`, and discarding those leaves a
-   * stylesheet with a real syntax error compiling to a smaller stylesheet with
-   * no diagnostic anywhere.
+   * lightningcss reports what it could not parse in `result.warnings` with no
+   * flag needed, and discarding that leaves a stylesheet with a real syntax
+   * error compiling to a smaller one with no diagnostic anywhere. The rule is
+   * not dropped by lightningcss — it passes the sheet through verbatim and this
+   * compiler's visitor then finds nothing to extract, which is why the warning
+   * is the only evidence the rule existed.
+   *
+   * A `Set` because lightningcss emits one warning per occurrence and the
+   * message carries no line or column, so two copies of one mistake are a
+   * string a reader cannot tell apart from itself. Two DISTINCT mistakes still
+   * report twice.
    */
   addSyntaxWarning(message: string) {
-    this.shared.syntaxWarnings.push(message);
+    this.shared.syntaxWarnings.add(message);
   }
 
   /** A property with no parser at all. */
@@ -517,8 +523,8 @@ export class StylesheetBuilder {
       result.functions = this.shared.warningFunctions;
     }
 
-    if (this.shared.syntaxWarnings.length) {
-      result.syntax = this.shared.syntaxWarnings;
+    if (this.shared.syntaxWarnings.size) {
+      result.syntax = [...this.shared.syntaxWarnings];
     }
 
     return result;
