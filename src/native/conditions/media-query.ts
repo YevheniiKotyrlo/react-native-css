@@ -1,4 +1,4 @@
-import { Appearance, I18nManager, PixelRatio, Platform } from "react-native";
+import { I18nManager, PixelRatio, Platform } from "react-native";
 
 import type {
   MediaCondition,
@@ -12,6 +12,7 @@ import {
   invertedColors,
   reducedTransparency,
   reduceMotion,
+  resolveColorScheme,
   vh,
   vw,
   type Getter,
@@ -119,12 +120,13 @@ function resolveFeature(name: string, get: Getter): StyleDescriptor {
     case "any-pointer":
       return POINTER_IS_FINE ? "fine" : "coarse";
     case "prefers-color-scheme":
-      // The same resolution the public `colorScheme.get()` uses. Reading the raw
-      // observable alone leaves the class layer matching neither light nor dark
-      // whenever it holds null — which is its value at rest, and after
-      // `set(null)`. With no OS preference either, MQ5 §5.4 makes `light` the
-      // answer rather than neither.
-      return get(colorScheme) ?? Appearance.getColorScheme() ?? "light";
+      // The same resolution the public `colorScheme.get()` uses — the one
+      // function both call, so the class layer and the prop layer cannot answer
+      // differently. Reading the raw observable alone leaves the class layer
+      // matching neither light nor dark whenever it holds a non-scheme: null at
+      // rest and after `set(null)`, and `"unspecified"` after a
+      // follow-the-system request on react-native 0.86.
+      return resolveColorScheme(get(colorScheme));
     // Each of these maps 1:1 onto an `AccessibilityInfo` getter plus its change
     // event.
     case "prefers-reduced-motion":

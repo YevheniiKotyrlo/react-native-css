@@ -17,6 +17,7 @@ import { mappingToConfig, useNativeCss } from "./react/useNativeCss";
 import { usePassthrough } from "./react/usePassthrough";
 import {
   colorScheme as colorSchemeObs,
+  resolveColorScheme,
   toVariableRecord,
   VAR_SYMBOL,
   type Effect,
@@ -73,7 +74,7 @@ export const styled = <
 
 export const colorScheme: ColorScheme = {
   get() {
-    return colorSchemeObs.get() ?? Appearance.getColorScheme() ?? "light";
+    return resolveColorScheme(colorSchemeObs.get());
   },
   set(value) {
     // Every reader, in one call. There are three, and they are three separate
