@@ -61,3 +61,13 @@ test("hashing the same key twice answers the same value", () => {
 
   expect(generateHash([only])).toBe(generateHash([only]));
 });
+
+test("the encoding is integers, not floats or exponents", () => {
+  // The ordering runs through a `Float64Array`, so every member is a double by the time it is
+  // joined. `Number.prototype.toString` renders an integral double without a fraction, and only
+  // switches to exponential notation past 1e21 — far beyond a key counter. Pinning it here means a
+  // future change to the array type has to face the question rather than silently reshape the key.
+  const keys: WeakKey[] = [{}, {}, {}];
+
+  expect(generateHash(keys)).toMatch(/^\d+(?:,\d+)*$/u);
+});

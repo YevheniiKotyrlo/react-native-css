@@ -333,18 +333,27 @@ export function generateStateHash(
  * through.
  */
 export function generateHash(keys: WeakKey[]): string {
-  const numbers: number[] = [];
+  // A Float64Array rather than an array, because `.sort()` on a typed array is numeric and native.
+  // `Array.prototype.sort` needs a comparator to order numbers, and that comparator is a JS
+  // function Hermes calls O(n log n) times — measured on a physical device, it is the whole cost of
+  // ordering here. Float64 rather than Int32 because the key counter is unbounded and Int32 wraps
+  // silently at 2^31, which would turn two distinct key sets into one string.
+  const numbers = new Float64Array(keys.length);
+  let index = 0;
 
   for (const key of keys) {
-    numbers.push(hashKeyFamily(key));
+    numbers[index] = hashKeyFamily(key);
+    index += 1;
   }
 
-  // Sorted, so a set of keys hashes the same however it was iterated. The
+  // Sorted, so a set of keys encodes the same however it was iterated. The
   // caller relies on that: the rule set is a Set built in render order.
   //
   // Joined rather than folded into a single number, so distinct key sets
   // cannot land on one string. This value keys the resolved-style cache, and
   // a collision there does not cost a cache miss — it hands one element
   // another element's styles.
-  return numbers.sort((left, right) => left - right).join(",");
+  numbers.sort();
+
+  return numbers.join(",");
 }

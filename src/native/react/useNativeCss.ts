@@ -373,8 +373,7 @@ const configForMapping = weakFamily(function (
       next.resetsTextAncestor = true;
     }
     return next;
-  });
-});
+  });});
 
 /**
  * A mapping is a record of prop name to style target, and that is the only shape either entry point
