@@ -16,6 +16,7 @@ import { testGuards, type RenderGuard } from "../conditions/guards";
 import {
   cleanupEffect,
   ContainerContext,
+  weakFamily,
   type ContainerContextValue,
   type Effect,
   type Getter,
@@ -167,9 +168,17 @@ export function useNativeCss(
 }
 
 /**
- * Convert the styled() mapping to a config array
+ * Convert the styled() mapping to a config array.
+ *
+ * Derived once per mapping. `generateStateHash` keys the resolved-style cache on `state.configs`
+ * by object identity, so an equal-but-fresh array per consumer gives each of them its own cache
+ * entry, its own sorted rules and its own observable. `styled()` already avoids that by deriving
+ * at module scope; `useCssElement` derives per component instance, and every wrapper this library
+ * ships passes it a module constant.
  */
-export function mappingToConfig(mapping: StyledConfiguration<any>) {
+export const mappingToConfig = weakFamily(function (
+  mapping: StyledConfiguration<any>,
+): Config[] {
   return Object.entries(mapping).flatMap(([key, value]): Config => {
     if (value === true) {
       return {
@@ -213,4 +222,4 @@ export function mappingToConfig(mapping: StyledConfiguration<any>) {
 
     throw new Error(`styled(): Invalid mapping for ${key}: ${value}`);
   });
-}
+});
