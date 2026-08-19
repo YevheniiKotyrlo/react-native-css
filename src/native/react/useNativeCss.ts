@@ -377,8 +377,14 @@ const configForMapping = weakFamily(function (
 });
 
 /**
- * The derivation is cached on the mapping OBJECT, so a non-object cannot be a cache key. Rejecting
- * it here answers with this library's own error rather than a `WeakMap` one three frames away.
+ * A mapping is a record of prop name to style target, and that is the only shape either entry point
+ * is typed to accept. Anything else is refused here, by name.
+ *
+ * The predicate is deliberately NARROWER than what the `WeakMap` behind `configForMapping` would
+ * take: a function and an unregistered symbol are both valid weak keys, and both are refused,
+ * because neither is a mapping. What the guard buys is the message — without it a primitive reaches
+ * that `WeakMap` and raises `Invalid value used as weak map key` from inside `reactivity`, naming
+ * neither `styled()` nor the argument that was wrong.
  */
 export function mappingToConfig(mapping: StyledConfiguration<any>): Config[] {
   if (typeof mapping !== "object" || mapping === null) {

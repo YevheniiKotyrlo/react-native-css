@@ -44,6 +44,16 @@ test("a key set hashes the same however it is ordered", () => {
   );
 });
 
+test("a key outside WeakKey is refused rather than erased", () => {
+  // The encoding is exact only if it encodes every member. Skipping one — which the inherited
+  // `if (!key) continue` did — makes `[a, b]` and `[a, falsy, b]` the same string, and a cache
+  // key collision hands the second caller the first caller's styles. Unreachable from typed code,
+  // so this pins the contract rather than a bug: out of domain fails, it does not vanish.
+  const key: WeakKey = {};
+
+  expect(() => generateHash([key, undefined as unknown as WeakKey])).toThrow();
+});
+
 test("hashing the same key twice answers the same value", () => {
   // `hashKeyFamily` assigns each key a number once. A key whose number is not retained hashes
   // differently on its second lookup, which splits its cache entry.

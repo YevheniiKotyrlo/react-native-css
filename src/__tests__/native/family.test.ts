@@ -31,9 +31,12 @@ test("family calls its factory once per key when the result is falsy", () => {
 });
 
 test("a weak key hashes to the same value on every lookup", () => {
-  // The first key this module hashes is the one assigned `0`, so it is the one that exposes the
-  // miss. Nothing else in this file hashes, which is what keeps it first.
+  // The key assigned `0` is the one the falsy-cache miss exposes, and it is whichever key this
+  // module hashes FIRST. Asserting the value rather than only the agreement is what keeps that
+  // true: a test added above this one that hashes would take the `0` and leave this passing
+  // against a key that was never at risk.
   const key = {};
 
+  expect(generateHash([key])).toBe("0");
   expect(generateHash([key])).toBe(generateHash([key]));
 });

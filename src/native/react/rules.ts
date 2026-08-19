@@ -326,13 +326,16 @@ export function generateStateHash(
  * must not be folded back into one. The value keys the resolved-style cache, where two different
  * key sets meeting on one string do not cost a cache miss — the second element renders the first
  * element's styles.
+ *
+ * Every member is encoded. A key skipped here would be erased from the value, so two key sets
+ * differing only in the skipped member would collide — which is why `WeakKey` is load-bearing
+ * rather than decorative, and why a value outside it fails at the `WeakMap` rather than passing
+ * through.
  */
 export function generateHash(keys: WeakKey[]): string {
   const numbers: number[] = [];
 
   for (const key of keys) {
-    if (!key) continue; // Skip if key is undefined
-
     numbers.push(hashKeyFamily(key));
   }
 
