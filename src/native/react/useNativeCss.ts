@@ -297,8 +297,14 @@ export function useNativeCss(
  * entry, its own sorted rules and its own observable. `styled()` already avoids that by deriving
  * at module scope; `useCssElement` derives per component instance, and every wrapper this library
  * ships passes it a module constant.
+ *
+ * Caching on the mapping's identity means a mapping MUTATED after its first use is not re-derived.
+ * That is a narrowing of behaviour rather than a change of it: `useCssElement` already froze the
+ * derivation per instance through `useState`, so a live element never saw a mutation either — only
+ * a newly mounted one did, which made the same mapping mean two things at once. A caller that wants
+ * a different mapping passes a different object, which is what every call site here already does.
  */
-export const mappingToConfig = weakFamily(function (
+const configForMapping = weakFamily(function (
   mapping: StyledConfiguration<any>,
 ): Config[] {
   const configs = Object.entries(mapping).flatMap(([key, value]): Config => {
@@ -369,3 +375,17 @@ export const mappingToConfig = weakFamily(function (
     return next;
   });
 });
+
+/**
+ * The derivation is cached on the mapping OBJECT, so a non-object cannot be a cache key. Rejecting
+ * it here answers with this library's own error rather than a `WeakMap` one three frames away.
+ */
+export function mappingToConfig(mapping: StyledConfiguration<any>): Config[] {
+  if (typeof mapping !== "object" || mapping === null) {
+    throw new Error(
+      `styled(): mapping must be an object, received ${mapping === null ? "null" : typeof mapping}`,
+    );
+  }
+
+  return configForMapping(mapping);
+}

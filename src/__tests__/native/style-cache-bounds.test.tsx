@@ -10,6 +10,7 @@ import type {
   StyledProps,
 } from "react-native-css/runtime.types";
 
+import { mappingToConfig } from "../../native/react/useNativeCss";
 import { stylesFamily } from "../../native/styles";
 
 /**
@@ -31,6 +32,25 @@ const Tinted = copyComponentProperties(
   (props: StyledProps<ViewProps, typeof tintedMapping>) =>
     useCssElement(RNView, props, tintedMapping),
 );
+
+test("nothing writes to the config every element now shares", () => {
+  // While each element minted its own config, a write to one was private. Sharing makes
+  // "the consumers only read it" load-bearing rather than incidental — and that claim was
+  // inherited rather than measured.
+  //
+  // Checked by VALUE rather than by `Object.freeze`: a write to a frozen object throws only in
+  // strict mode, and measured here it does not throw at all — so a freeze-based version of this
+  // test passes whatever the code does, which is worse than not having it.
+  registerCSS(`.tinted { color: orange; }`);
+
+  const shared = mappingToConfig(tintedMapping);
+  const before = JSON.stringify(shared);
+
+  render(<Tinted className="tinted" testID="unmutated" />);
+
+  expect(JSON.stringify(shared)).toBe(before);
+  expect(screen.getByTestId("unmutated").props.tintColor).toBe("#ffa500");
+});
 
 test("a shared entry is not consumed by the first element that reads it", () => {
   // `nativeStyleMapping` drains the resolved style in place. That is harmless when every element

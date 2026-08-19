@@ -89,6 +89,29 @@ test("a state hash always carries the config, so it is never the empty string", 
   expect(generateStateHash(state, [ruleFor()])).not.toBe("");
 });
 
+test("a mapping that is not an object is refused by name", () => {
+  // The derivation is cached on the mapping OBJECT. A primitive cannot be a weak-map key, so
+  // without this guard the failure surfaces as a `WeakMap` error naming nothing the caller wrote.
+  expect(() => mappingToConfig("style" as never)).toThrow(
+    /mapping must be an object/u,
+  );
+  expect(() => mappingToConfig(undefined as never)).toThrow(
+    /mapping must be an object/u,
+  );
+});
+
+test("a mapping mutated after its first use is not re-derived", () => {
+  // Documented rather than defended: `useCssElement` already froze the derivation per instance, so
+  // a mutation only ever reached NEWLY mounted elements — the same mapping meaning two things at
+  // once. Deriving once per mapping settles it on one.
+  const mapping: Record<string, string> = { className: "style" };
+  const first = mappingToConfig(mapping);
+
+  mapping.className = "contentContainerStyle";
+
+  expect(mappingToConfig(mapping)).toBe(first);
+});
+
 test("a mapping built per call still produces an equal config", () => {
   // Every wrapper the library ships passes a module constant, but a caller may build the mapping
   // inline. That path cannot share on identity and has to keep working unchanged.
