@@ -78,6 +78,17 @@ test("mappings that differ keep different cache keys", () => {
   expect(view).not.toBe(scrollView);
 });
 
+test("a state hash always carries the config, so it is never the empty string", () => {
+  // The empty string used to double as a no-keys sentinel in `generateStateHash`. With the key a
+  // join rather than a digest, an empty key list renders as the empty string too — so the sentinel
+  // and a real state would have shared one cache entry. The config is an unconditional key, which
+  // is what makes the sentinel unnecessary rather than merely unlikely.
+  const state = stateFor(mappingToConfig(viewMapping));
+
+  expect(generateStateHash(state, [])).not.toBe("");
+  expect(generateStateHash(state, [ruleFor()])).not.toBe("");
+});
+
 test("a mapping built per call still produces an equal config", () => {
   // Every wrapper the library ships passes a module constant, but a caller may build the mapping
   // inline. That path cannot share on identity and has to keep working unchanged.
