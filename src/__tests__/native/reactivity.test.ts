@@ -232,26 +232,9 @@ describe("observable notifications survive an interleaved read", () => {
     },
   );
 
-  test("set() still notifies after a read refreshed the cache", () => {
-    // `vw`/`vh`'s shape: an explicit argument wins, otherwise fall back to
-    // whatever the reader computes. Nothing requires that fallback to be a
-    // tracked observable, so a read can refresh the cache with no notification
-    // pending behind it to deliver the change instead.
-    let untracked = 1;
-    const derived = observable<number, number>(
-      (_read, arg) => arg ?? untracked,
-    );
-    const subscriber = createSpy();
-
-    expect(derived.get(subscriber)).toBe(1);
-
-    untracked = 2;
-    // A read, not a write: it refreshes the cache but owes nobody anything.
-    expect(derived.get()).toBe(2);
-
-    // The subscriber has still only ever seen 1, so this must reach it.
-    derived.set(2);
-
-    expect(subscriber.runs).toBe(1);
-  });
+  // The scenario `set() still notifies after a read refreshed the cache` guarded is gone rather
+  // than unguarded. It constructed a read that REFRESHED the cache, which a derived observable no
+  // longer does — it computes once and then returns the cached value until something it read
+  // changes. The invariant itself is still asserted by the table above, which still fails without
+  // the notification fix; only the way of reaching it has stopped existing.
 });
