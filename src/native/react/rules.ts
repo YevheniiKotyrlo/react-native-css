@@ -314,23 +314,21 @@ export function generateStateHash(
  * Quickly generate a unique hash for a set of numbers.
  * This is not a cryptographic hash, but it is fast and has a low chance of collision.
  */
-const MOD = 9007199254740871; // Largest prime within safe integer range 2^53
-const PRIME = 31; // A smaller prime for mixing
 export function generateHash(keys: WeakKey[]): string {
-  let hash = 0;
-  let product = 1; // Used for mixing to enhance uniqueness
+  const numbers: number[] = [];
 
   for (const key of keys) {
     if (!key) continue; // Skip if key is undefined
 
-    const num = hashKeyFamily(key);
-    hash = (hash ^ num) % MOD; // XOR and modular arithmetic
-    product = (product * (num + PRIME)) % MOD; // Mix with multiplication
+    numbers.push(hashKeyFamily(key));
   }
 
-  // Combine hash and product to form the final hash
-  hash = (hash + product) % MOD;
-
-  // Return the hash as a string
-  return hash.toString(36);
+  // Sorted, so a set of keys hashes the same however it was iterated. The
+  // caller relies on that: the rule set is a Set built in render order.
+  //
+  // Joined rather than folded into a single number, so distinct key sets
+  // cannot land on one string. This value keys the resolved-style cache, and
+  // a collision there does not cost a cache miss — it hands one element
+  // another element's styles.
+  return numbers.sort((left, right) => left - right).join(",");
 }
