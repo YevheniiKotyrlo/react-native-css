@@ -17,6 +17,7 @@ import { mappingToConfig, useNativeCss } from "./react/useNativeCss";
 import { usePassthrough } from "./react/usePassthrough";
 import {
   colorScheme as colorSchemeObs,
+  holdsRequestNotScheme,
   resolveColorScheme,
   toVariableRecord,
   VAR_SYMBOL,
@@ -83,6 +84,16 @@ export const colorScheme: ColorScheme = {
     // Appearance.addChangeListener. Moving one without the others splits the
     // app's own UI
     const previous = Appearance.getColorScheme();
+
+    // Resolved BEFORE the write, because on react-native 0.82.0-0.84.1 the
+    // write is what destroys the ability to resolve: that band caches the
+    // REQUESTED value verbatim, so a follow-the-system request leaves
+    // Appearance.getColorScheme() answering the literal "unspecified" to every
+    // reader in the app. react-native removed that in 0.85.3 by caching the
+    // scheme in force instead; on the band that did not, this is the scheme in
+    // force.
+    const inForce = resolveColorScheme(colorSchemeObs.get());
+
     // Through the seam rather than straight at `Appearance`: `ColorSchemeName`
     // is this package's own union now, and the one member the supported
     // react-native range declares incompatibly — the "follow the system" write
@@ -115,6 +126,18 @@ export const colorScheme: ColorScheme = {
     // change. `previous` keeps a set of the scheme already in force silent.
     if ((value === "dark" || value === "light") && value !== previous) {
       DeviceEventEmitter.emit("appearanceChanged", { colorScheme: value });
+    } else if (holdsRequestNotScheme(Appearance.getColorScheme())) {
+      // The hand-back went through, and on 0.82.0-0.84.1 it left react-native's
+      // own cache holding the request. That cache is not this library's — it is
+      // what `useColorScheme()` and every documented store read — so routing
+      // around it would leave the app answering "unspecified" while this
+      // library answered correctly. Put the scheme in force back where every
+      // reader looks for it, on the same device event the platform uses, and
+      // Appearance performs the cache write and the emit exactly as it does for
+      // an OS change. Nothing is announced on the bands whose cache can still
+      // answer, because there the platform's own echo is still the only thing
+      // that should move the scheme.
+      DeviceEventEmitter.emit("appearanceChanged", { colorScheme: inForce });
     }
   },
 };
