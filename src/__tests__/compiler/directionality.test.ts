@@ -184,6 +184,38 @@ describe("media queries", () => {
     });
   });
 
+  test("an author's own `and` is carried whole beside the dir condition", () => {
+    expect(
+      compile(`
+        @media (min-width: 10px) and (prefers-color-scheme: dark) {
+          .both:dir(rtl) { padding-left: 4px; }
+        }
+      `).stylesheet(),
+    ).toStrictEqual({
+      s: [
+        [
+          "both",
+          [
+            {
+              s: [2, 2],
+              m: [
+                [
+                  "&",
+                  [
+                    [">=", "width", 10],
+                    ["=", "prefers-color-scheme", "dark"],
+                  ],
+                ],
+                RTL,
+              ],
+              d: [PADDING],
+            },
+          ],
+        ],
+      ],
+    });
+  });
+
   test("a dir condition composes with a media query and a container query", () => {
     expect(
       compile(`
@@ -255,6 +287,28 @@ describe("the [dir] value", () => {
     expect(
       compile(`.not:not(:dir(rtl)) { padding-left: 4px; }`).stylesheet(),
     ).toStrictEqual({});
+  });
+
+  test("an unanswerable value inside :is() drops the rule rather than the arm", () => {
+    // The fail-closed arm the subject compound already has, one nesting in: the `:is()` path
+    // resolves the value itself, so a rule kept there would apply in every direction.
+    expect(
+      compile(`
+        .isauto:is([dir="auto"]) { padding-left: 4px; }
+        .wherepresent:where([dir]) { padding-left: 4px; }
+        .isop:is([dir^="r"]) { padding-left: 4px; }
+      `).stylesheet(),
+    ).toStrictEqual({});
+  });
+
+  test("an unanswerable arm drops only its own rule, leaving its siblings", () => {
+    expect(
+      compile(
+        `.mixedauto:is([dir="auto"], :dir(rtl)) { padding-left: 4px; }`,
+      ).stylesheet(),
+    ).toStrictEqual({
+      s: [["mixedauto", [{ s: [1, 1], d: [PADDING], m: [RTL] }]]],
+    });
   });
 });
 
