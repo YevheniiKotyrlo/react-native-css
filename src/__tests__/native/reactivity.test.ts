@@ -1,9 +1,13 @@
+import { Dimensions } from "react-native";
+
 import {
   containerHeightFamily,
   containerLayoutFamily,
   containerWidthFamily,
   observable,
   observableBatch,
+  vh,
+  vw,
   type Effect,
   type Observable,
 } from "../../native/reactivity";
@@ -286,5 +290,42 @@ describe("the container axes project from one layout cell", () => {
 
     expect(containerWidthFamily(key).get()).toBe(0);
     expect(containerHeightFamily(key).get()).toBe(0);
+  });
+});
+
+describe("a window resize reaches both viewport axes in one batch", () => {
+  // `Dimensions.addEventListener`'s callback is the only path a rotation takes to `vw` and `vh`, and
+  // its batch is what stops a subscriber from seeing a half-updated viewport: without it the two
+  // `set` calls notify separately, so an effect reading both runs once against the new width beside
+  // the old height. Nothing executed this callback, which is how the shape stayed unexamined.
+  const resize = (width: number, height: number): void => {
+    const size = { width, height, scale: 2, fontScale: 1 };
+    Dimensions.set({ window: size, screen: size });
+  };
+
+  test("both axes update and a subscriber reading both runs exactly once", () => {
+    const spy = createSpy();
+    vw.get(spy);
+    vh.get(spy);
+    const runsBefore = spy.runs;
+
+    resize(1024, 256);
+
+    expect(vw.get()).toBe(1024);
+    expect(vh.get()).toBe(256);
+    expect(spy.runs - runsBefore).toBe(1);
+  });
+
+  test("the batch it opens is closed again, so a later notification is not swallowed", () => {
+    resize(360, 800);
+
+    expect(observableBatch.current).toBeUndefined();
+
+    const spy = createSpy();
+    const later = observable(1);
+    later.get(spy);
+    later.set(2);
+
+    expect(spy.runs).toBe(1);
   });
 });
