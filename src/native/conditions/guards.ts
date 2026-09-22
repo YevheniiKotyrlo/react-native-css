@@ -9,7 +9,8 @@ export type RenderGuard =
   | ["a", string, any]
   | ["d", string, any]
   | ["v", string, any]
-  | ["c", string, WeakKey];
+  // `undefined` is the absence of a container, which a later render can supply.
+  | ["c", string, WeakKey | undefined];
 
 export function testGuards(
   state: ComponentState,
@@ -34,8 +35,8 @@ export function testGuards(
         result = inheritedVariables[guard[1]] !== guard[2];
         break;
       case "c":
-        // Containers
-        result = inheritedContainers[guard[1]] !== guard[2];
+        // The element, never the registration, which is minted per update.
+        result = inheritedContainers[guard[1]]?.key !== guard[2];
         break;
     }
 

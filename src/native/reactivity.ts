@@ -223,7 +223,19 @@ Appearance.addChangeListener((event) => colorScheme.set(event.colorScheme));
 
 /** Containers ****************************************************************/
 
-export type ContainerContextValue = Record<string, WeakKey>;
+/**
+ * A registered container, and the scope it was registered IN.
+ *
+ * The scope is what makes an ancestor CHAIN answerable. `.a .b .x` asks for a `.b` ancestor that
+ * itself has an `.a` ancestor (Selectors 4 §16.1); a name-to-element map answers only "both names
+ * are somewhere above", which is also true when the nesting is reversed.
+ */
+export interface ContainerRegistration {
+  readonly key: WeakKey;
+  readonly scope: ContainerContextValue;
+}
+
+export type ContainerContextValue = Record<string, ContainerRegistration>;
 export const ContainerContext = createContext<ContainerContextValue>({});
 
 export const containerLayoutFamily = weakFamily(() => {

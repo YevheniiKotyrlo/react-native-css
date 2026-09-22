@@ -21,41 +21,58 @@ import type { RenderGuard } from "./guards";
 
 export const DEFAULT_CONTAINER_NAME = "c:___default___";
 
+/**
+ * The ancestor compounds of one selector, outermost first, walked INNERMOST first.
+ *
+ * Each compound is resolved in the scope of the one inside it, so `.a .b .x` asks for a `.b`
+ * ancestor that itself has an `.a` ancestor — Selectors 4 §16.1. Resolving every compound in the
+ * element's own scope asks only "are both names somewhere above", which is also true when the
+ * nesting is reversed.
+ */
 export function testContainerQueries(
   queries: ContainerQuery[],
   inheritedContainers: ContainerContextValue,
   guards: RenderGuard[],
   get: Getter,
 ) {
-  return queries.every((query) => {
-    return testContainerQuery(query, inheritedContainers, guards, get);
-  });
+  // Every name the walk can reach is also inherited by this element, so the element's own scope is
+  // where a change to any of them is observable — and it is the only scope this element can re-read.
+  // Keyed on the element rather than on the registration, which is minted per update.
+  for (const query of queries) {
+    const name = query.n ?? DEFAULT_CONTAINER_NAME;
+    guards.push(["c", name, inheritedContainers[name]?.key]);
+  }
+
+  let scope = inheritedContainers;
+
+  for (let index = queries.length - 1; index >= 0; index--) {
+    const query = queries[index]!;
+    const registration = scope[query.n ?? DEFAULT_CONTAINER_NAME];
+
+    if (!registration || !testContainerQuery(query, registration.key, get)) {
+      return false;
+    }
+
+    scope = registration.scope;
+  }
+
+  return true;
 }
 
 export function testContainerQuery(
   query: ContainerQuery,
-  inheritedContainers: ContainerContextValue,
-  guards: RenderGuard[],
+  containerKey: WeakKey,
   get: Getter,
 ): boolean {
-  const name = query.n ?? DEFAULT_CONTAINER_NAME;
-  const container = inheritedContainers[name]!;
-
-  guards.push(["c", name, container]);
-
-  if (!container) {
-    return false;
-  }
-
   // if (query.a && !testAttributes(query.a, container.props, guards)) {
   //   return false;
   // }
 
-  if (query.m && !testContainerMediaCondition(query.m, container, get)) {
+  if (query.m && !testContainerMediaCondition(query.m, containerKey, get)) {
     return false;
   }
 
-  if (query.p && !testContainerPseudoCondition(query.p, container, get)) {
+  if (query.p && !testContainerPseudoCondition(query.p, containerKey, get)) {
     return false;
   }
 

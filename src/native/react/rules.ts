@@ -139,18 +139,24 @@ export function updateRules(
       }
 
       if (rule.c) {
+        // The scope this element registers IN — what a chained ancestor query walks out through.
+        const registration = {
+          key: state.ruleEffectGetter,
+          scope: inheritedContainers,
+        };
+
         // We're going to set a value, so we need to create a new object
         if (containers === inheritedContainers) {
           containers = {
             ...inheritedContainers,
             // This container becomes the default container
-            [DEFAULT_CONTAINER_NAME]: state.ruleEffectGetter,
+            [DEFAULT_CONTAINER_NAME]: registration,
           };
         }
 
         // This this component as the named container
         for (const name of rule.c) {
-          containers![name] = state.ruleEffectGetter;
+          containers![name] = registration;
         }
 
         // Enable hover/active/focus/layout handlers
