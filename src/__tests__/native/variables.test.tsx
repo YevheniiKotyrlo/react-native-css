@@ -471,4 +471,34 @@ describe("circular variables", () => {
       opacity: 0.5,
     });
   });
+
+  // A name with ONE definition is inlined at compile time, so each of these carries a second the
+  // element never inherits — that is what leaves the lookup to the runtime at all.
+  test("a universal variable resolves when no scope above defines the name", () => {
+    registerCSS(`
+      * { --universal: 7px; }
+      .elsewhere { --universal: 99px; }
+      .uses-universal { width: var(--universal); }
+    `);
+
+    render(<View testID={testID} className="uses-universal" />);
+
+    expect(screen.getByTestId(testID).props.style).toStrictEqual({ width: 7 });
+  });
+
+  test("an inherited definition outranks the universal one", () => {
+    registerCSS(`
+      * { --universal: 7px; }
+      .defines { --universal: 11px; }
+      .uses-universal { width: var(--universal); }
+    `);
+
+    render(
+      <View className="defines">
+        <View testID={testID} className="uses-universal" />
+      </View>,
+    );
+
+    expect(screen.getByTestId(testID).props.style).toStrictEqual({ width: 11 });
+  });
 });

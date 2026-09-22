@@ -103,15 +103,6 @@ export function varResolver(
       return value;
     }
 
-    value = resolve(variables[name]);
-    if (value !== undefined) {
-      renderGuards?.push(["v", name, value]);
-      options.inlineVariables ??= { [VAR_SYMBOL]: "inline" };
-      options.inlineVariables[name] = value;
-
-      return value;
-    }
-
     value = resolve(get(universalVariables(name)));
     if (value !== undefined) {
       options.inlineVariables ??= { [VAR_SYMBOL]: "inline" };
