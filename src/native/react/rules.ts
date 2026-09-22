@@ -7,7 +7,7 @@ import { DEFAULT_CONTAINER_NAME } from "../conditions/container-query";
 import {
   DIRECTIONALITY_VARIABLE,
   resolveDeclaredDirectionality,
-  resolveDirectionality,
+  resolveInheritedDirectionality,
   resolveUaDirectionRule,
 } from "../conditions/directionality";
 import type { RenderGuard } from "../conditions/guards";
@@ -55,10 +55,8 @@ export function updateRules(
   const declaredDirectionality = resolveDeclaredDirectionality(
     currentProps?.dir,
   );
-  const directionality = resolveDirectionality(
-    currentProps,
-    inheritedVariables,
-  );
+  const directionality =
+    declaredDirectionality ?? resolveInheritedDirectionality(inheritedVariables);
   guards.push(["a", "dir", currentProps?.dir]);
   guards.push([
     "v",

@@ -39,13 +39,17 @@ export function resolveDeclaredDirectionality(
   return value === "ltr" || value === "rtl" ? value : undefined;
 }
 
-export function resolveDirectionality(
-  props: Record<string, unknown> | null | undefined,
+/**
+ * What an element inherits, which is only consulted when it declares nothing itself.
+ *
+ * Separate from the declared half so a caller that has already resolved `props.dir` — every caller
+ * does, to decide whether to publish and take the UA rule — spends one resolve rather than two.
+ */
+export function resolveInheritedDirectionality(
   inheritedVariables: VariableContextValue,
 ): Directionality | undefined {
-  return (
-    resolveDeclaredDirectionality(props?.dir) ??
-    resolveDeclaredDirectionality(inheritedVariables[DIRECTIONALITY_VARIABLE])
+  return resolveDeclaredDirectionality(
+    inheritedVariables[DIRECTIONALITY_VARIABLE],
   );
 }
 
