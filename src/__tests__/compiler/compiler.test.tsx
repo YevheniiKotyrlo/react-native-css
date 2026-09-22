@@ -26,6 +26,16 @@ test("hello world", () => {
   });
 });
 
+test("compiles bytes exactly as it compiles their text", () => {
+  const css = `:root { font-size: 16px; } .my-class { padding: 1rem; }`;
+  const fromText = compile(css).stylesheet();
+
+  expect(compile(new TextEncoder().encode(css)).stylesheet()).toStrictEqual(
+    fromText,
+  );
+  expect(compile(Buffer.from(css)).stylesheet()).toStrictEqual(fromText);
+});
+
 test("reads global CSS variables", () => {
   const compiled = compile(
     `@layer theme {
