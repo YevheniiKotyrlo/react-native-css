@@ -1,4 +1,7 @@
 import {
+  containerHeightFamily,
+  containerLayoutFamily,
+  containerWidthFamily,
   observable,
   observableBatch,
   type Effect,
@@ -253,5 +256,35 @@ describe("observable notifications survive an interleaved read", () => {
     derived.set(2);
 
     expect(subscriber.runs).toBe(1);
+  });
+});
+
+describe("the container axes project from one layout cell", () => {
+  // A square probe makes the two axes agree, so the fixture is deliberately not square: reading the
+  // wrong field answers plausibly and is invisible to every assertion that does not compare them.
+  const LANDSCAPE = { x: 0, y: 0, width: 500, height: 100 } as const;
+
+  test("width reads width and height reads height", () => {
+    const key = {};
+    containerLayoutFamily(key).set({ ...LANDSCAPE });
+
+    expect(containerWidthFamily(key).get()).toBe(500);
+    expect(containerHeightFamily(key).get()).toBe(100);
+  });
+
+  test("each axis re-answers when the layout changes", () => {
+    const key = {};
+    containerLayoutFamily(key).set({ ...LANDSCAPE });
+    containerLayoutFamily(key).set({ x: 0, y: 0, width: 40, height: 900 });
+
+    expect(containerWidthFamily(key).get()).toBe(40);
+    expect(containerHeightFamily(key).get()).toBe(900);
+  });
+
+  test("an unmeasured container answers zero on both axes", () => {
+    const key = {};
+
+    expect(containerWidthFamily(key).get()).toBe(0);
+    expect(containerHeightFamily(key).get()).toBe(0);
   });
 });

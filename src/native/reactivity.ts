@@ -288,7 +288,7 @@ function createReactivityState() {
     }),
     containerHeightFamily: weakFamily((key: WeakKey) => {
       return observable((read) => {
-        return read(containerLayoutFamily(key))?.width || 0;
+        return read(containerLayoutFamily(key))?.height || 0;
       });
     }),
   };
