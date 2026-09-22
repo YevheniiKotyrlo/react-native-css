@@ -234,8 +234,19 @@ describe("the [dir] value", () => {
     expect(
       compile(`
         .auto[dir="auto"] { padding-left: 4px; }
-        .prefix[dir^="r"] { padding-left: 4px; }
         .present[dir] { padding-left: 4px; }
+      `).stylesheet(),
+    ).toStrictEqual({});
+  });
+
+  test("every operator but equality matches nothing, so a partial match never widens the rule", () => {
+    expect(
+      compile(`
+        .prefix[dir^="r"] { padding-left: 4px; }
+        .suffix[dir$="tl"] { padding-left: 4px; }
+        .substring[dir*="rtl"] { padding-left: 4px; }
+        .includes[dir~="rtl"] { padding-left: 4px; }
+        .dash[dir|="rtl"] { padding-left: 4px; }
       `).stylesheet(),
     ).toStrictEqual({});
   });

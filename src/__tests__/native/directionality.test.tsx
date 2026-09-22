@@ -184,6 +184,24 @@ test("an author direction declaration outranks the UA rule and leaves the direct
   });
 });
 
+test("a dir value outside the enumeration is not a declaration", () => {
+  registerCSS(DIRECTION_CSS);
+
+  render(
+    <View dir="rtl">
+      {/* Outside the prop's type on purpose; the runtime is what is under test. */}
+      <View
+        testID="subject"
+        dir={"sideways" as unknown as "ltr"}
+        className="paint"
+      />
+    </View>,
+  );
+
+  expect(screen.getByTestId("subject")).toHaveStyle(RTL);
+  expect(screen.getByTestId("subject")).not.toHaveStyle({ direction: "ltr" });
+});
+
 test("dir=auto is not a declaration — the component holding the text resolves it", () => {
   registerCSS(DIRECTION_CSS);
 
