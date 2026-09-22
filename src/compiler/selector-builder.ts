@@ -144,6 +144,20 @@ function parseComponents(
     }
     case "pseudo-class": {
       switch (component.kind) {
+        case "dir": {
+          // Directionality is inherited, so an ancestor's `:dir()` is the element's own answer: the condition lands on the rule.
+          getMediaQuery(root).push(["=", "dir", component.direction]);
+          specificity[Specificity.PseudoClass] =
+            (specificity[Specificity.PseudoClass] ?? 0) + 1;
+          return parseComponents(rest, options, root, ref, specificity);
+        }
+        case "root": {
+          // `:root` names the document element: every element descends from it, and none IS it.
+          if (!isContainerQuery(ref)) {
+            return [];
+          }
+          return parseComponents(rest, options, root, ref, specificity);
+        }
         case "hover": {
           getPseudoClassesQuery(ref).h = 1;
           specificity[Specificity.PseudoClass] =
@@ -177,10 +191,10 @@ function parseComponents(
         case "where":
         case "is": {
           // Now get the selectors inside the `is` or `where` pseudo-class
-          const isWhereContainerQueries = component.selectors.flatMap(
-            (selector) => {
+          const isWhereContainerQueries = dedupeContainerQueries(
+            component.selectors.flatMap((selector) => {
               return parseIsWhereComponents(component.kind, selector) ?? [];
-            },
+            }),
           );
 
           // Remember we're looping in reverse order,
@@ -206,10 +220,11 @@ function parseComponents(
               parent = { ...originalParent };
               parent.specificity = [...originalParent.specificity];
 
-              if (m && m.length > 1) {
+              if (m) {
+                const condition = unwrapConjunction(m);
                 parent.mediaQuery = originalParent.mediaQuery
-                  ? [["&", [...originalParent.mediaQuery, m]]]
-                  : [m];
+                  ? [["&", [...originalParent.mediaQuery, condition]]]
+                  : [condition];
               }
 
               if (component.kind === "is") {
@@ -240,16 +255,14 @@ function parseComponents(
     }
     case "attribute": {
       if (component.name === "dir") {
-        if (!component.operation) {
-          return [];
-        }
-        const operator = operatorMap[component.operation.operator];
-
-        if (operator !== "=") {
+        const direction = resolveDirectionAttributeValue(component.operation);
+        if (direction === undefined) {
           return [];
         }
 
-        getMediaQuery(ref).push([operator, "dir", component.operation.value]);
+        getMediaQuery(root).push(["=", "dir", direction]);
+        specificity[Specificity.ClassName] =
+          (specificity[Specificity.ClassName] ?? 0) + 1;
         return parseComponents(rest, options, root, ref, specificity);
       } else {
         // specificity[Specificity.ClassName] =
@@ -453,7 +466,19 @@ function parseIsWhereComponents(
     }
     case "attribute": {
       if (component.name === "dir") {
-        return null;
+        const direction = resolveDirectionAttributeValue(component.operation);
+        if (direction === undefined) {
+          return null;
+        }
+        queries ??= [{ specificity: [] }];
+        for (const query of queries) {
+          if (type === "is") {
+            query.specificity[Specificity.ClassName] =
+              (query.specificity[Specificity.ClassName] ?? 0) + 1;
+          }
+          getMediaQuery(query).push(["=", "dir", direction]);
+        }
+        return parseIsWhereComponents(type, selector, index + 1, queries);
       }
 
       if (type !== "where") {
@@ -590,3 +615,50 @@ const operatorMap: Record<AttrOperation["operator"], AttrSelectorOperator> = {
   "substring": "*=",
   "suffix": "$=",
 };
+
+/**
+ * Two arms of one `:is()` / `:where()` that compile to the same query would emit the same rule
+ * twice. Tailwind's `rtl:` is the live case: `:dir(rtl)`, `[dir="rtl"]` and `[dir="rtl"] *` all
+ * name the directionality the element inherits.
+ */
+function dedupeContainerQueries(
+  queries: ContainerQueryWithSpecificity[],
+): ContainerQueryWithSpecificity[] {
+  const seen = new Set<string>();
+  return queries.filter((query) => {
+    const key = JSON.stringify(query);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+/** An arm holding one condition is that condition; the `&` around it is the builder's, and the bare `:dir()` form has none. */
+function unwrapConjunction(condition: MediaCondition): MediaCondition {
+  if (condition[0] !== "&" || condition[1].length !== 1) {
+    return condition;
+  }
+  const [single] = condition[1];
+  return single ?? condition;
+}
+
+/**
+ * The directionality a `[dir=…]` attribute selector names. HTML `dir` takes `ltr`, `rtl` and
+ * `auto`, ASCII-case-insensitively unless the selector's `s` flag says otherwise; only the first
+ * two are directionalities the engine can answer, and only an equality test names one of them,
+ * so every other operation is a selector that matches nothing here.
+ */
+function resolveDirectionAttributeValue(
+  operation: AttrOperation | null | undefined,
+): "ltr" | "rtl" | undefined {
+  if (!operation || operation.operator !== "equal") {
+    return undefined;
+  }
+  const value =
+    operation.caseSensitivity === "explicit-case-sensitive"
+      ? operation.value
+      : operation.value.toLowerCase();
+  return value === "ltr" || value === "rtl" ? value : undefined;
+}

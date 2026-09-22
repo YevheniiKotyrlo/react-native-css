@@ -4,6 +4,12 @@ import { StyleCollection } from "react-native-css/native-internal";
 
 import { testRule } from "../conditions";
 import { DEFAULT_CONTAINER_NAME } from "../conditions/container-query";
+import {
+  DIRECTIONALITY_VARIABLE,
+  resolveDeclaredDirectionality,
+  resolveDirectionality,
+  resolveUaDirectionRule,
+} from "../conditions/directionality";
 import type { RenderGuard } from "../conditions/guards";
 import { getDeepPath } from "../objects";
 import {
@@ -44,6 +50,26 @@ export function updateRules(
 
   let animated = false;
   let pressable = false;
+
+  // `:dir()` matches per element (Selectors 4 §7.1): the element's own `dir`, else its ancestors'.
+  const declaredDirectionality = resolveDeclaredDirectionality(
+    currentProps?.dir,
+  );
+  const directionality = resolveDirectionality(
+    currentProps,
+    inheritedVariables,
+  );
+  guards.push(["a", "dir", currentProps?.dir]);
+  guards.push([
+    "v",
+    DIRECTIONALITY_VARIABLE,
+    inheritedVariables[DIRECTIONALITY_VARIABLE],
+  ]);
+
+  if (declaredDirectionality !== undefined) {
+    variables = { ...inheritedVariables };
+    rules.add(resolveUaDirectionRule(declaredDirectionality));
+  }
 
   for (const config of state.configs) {
     const source = currentProps?.[config.source];
@@ -123,6 +149,7 @@ export function updateRules(
           currentProps,
           guards,
           inheritedContainers,
+          directionality,
         )
       ) {
         continue;
@@ -228,6 +255,11 @@ export function updateRules(
     for (const variable of inlineVariables) {
       rules.add(variable);
     }
+  }
+
+  // Written after every merge above: a declaration is the element's own, so nothing inherited or inline may shadow it.
+  if (declaredDirectionality !== undefined && variables) {
+    variables[DIRECTIONALITY_VARIABLE] = declaredDirectionality;
   }
 
   // Generate a StyleObservable for this unique set of rules / variables

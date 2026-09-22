@@ -1,45 +1,66 @@
 /* eslint-disable */
-import { I18nManager, PixelRatio, Platform } from "react-native";
+import { PixelRatio, Platform } from "react-native";
 
 import type { MediaCondition } from "react-native-css/compiler";
 
 import { colorScheme, vh, vw, type Getter } from "../reactivity";
+import {
+  resolveInitialDirectionality,
+  type Directionality,
+} from "./directionality";
 
-export function testMediaQuery(mediaQueries: MediaCondition[], get: Getter) {
-  return mediaQueries.every((query) => test(query, get));
+/**
+ * `directionality` is the ELEMENT's, resolved by `updateRules` from its `dir` prop and its
+ * inherited scope: `:dir()` answers per element (Selectors 4 §7.1), never per process. Absent —
+ * a `:root` declaration, a test over a global feature — the platform's root direction answers.
+ */
+export function testMediaQuery(
+  mediaQueries: MediaCondition[],
+  get: Getter,
+  directionality?: Directionality,
+) {
+  return mediaQueries.every((query) => test(query, get, directionality));
 }
 
-function test(mediaQuery: MediaCondition, get: Getter): Boolean {
+function test(
+  mediaQuery: MediaCondition,
+  get: Getter,
+  directionality: Directionality | undefined,
+): Boolean {
   switch (mediaQuery[0]) {
     case "[]":
     case "!!":
       return false;
     case "!":
-      return !test(mediaQuery[1], get);
+      return !test(mediaQuery[1], get, directionality);
     case "&":
       return mediaQuery[1].every((query) => {
-        return test(query, get);
+        return test(query, get, directionality);
       });
     case "|":
       return mediaQuery[1].some((query) => {
-        return test(query, get);
+        return test(query, get, directionality);
       });
     case ">":
     case ">=":
     case "<":
     case "<=":
     case "=": {
-      return testComparison(mediaQuery, get);
+      return testComparison(mediaQuery, get, directionality);
     }
   }
 }
 
-function testComparison(mediaQuery: MediaCondition, get: Getter): Boolean {
+function testComparison(
+  mediaQuery: MediaCondition,
+  get: Getter,
+  directionality: Directionality | undefined,
+): Boolean {
   const value = mediaQuery[2];
 
   switch (mediaQuery[1]) {
     case "dir":
-      return (I18nManager.isRTL && value === "rtl") || value === "ltr";
+      return value === (directionality ?? resolveInitialDirectionality());
     case "hover":
       return true;
     case "platform":

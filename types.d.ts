@@ -40,6 +40,8 @@ declare module "react-native" {
   interface ViewProps {
     className?: string;
     cssInterop?: boolean;
+    /** The element's directionality — HTML's `dir`, which `:dir()` matches and descendants inherit. */
+    dir?: "ltr" | "rtl";
   }
   interface TextInputProps {
     placeholderClassName?: string;
@@ -47,6 +49,7 @@ declare module "react-native" {
   interface TextProps {
     className?: string;
     cssInterop?: boolean;
+    dir?: "ltr" | "rtl";
   }
   interface SwitchProps {
     className?: string;
