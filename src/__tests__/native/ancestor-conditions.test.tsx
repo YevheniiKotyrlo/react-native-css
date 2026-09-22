@@ -85,6 +85,24 @@ test("a named ancestor still answers from the element its class names", () => {
   expect(screen.getByTestId("subject")).toHaveStyle(RED);
 });
 
+test("the ancestor itself is not a subject, even when it carries the class", () => {
+  registerCSS(`
+    ${CONTAINER_CSS}
+    :hover .subject { color: red; }
+  `);
+
+  render(
+    <View testID="container" className="container subject">
+      <View testID="descendant" className="subject" />
+    </View>,
+  );
+
+  fireEvent(screen.getByTestId("container"), "hoverIn");
+
+  expect(screen.getByTestId("descendant")).toHaveStyle(RED);
+  expect(screen.getByTestId("container")).not.toHaveStyle(RED);
+});
+
 test("a hovered ancestor moves every subject beneath it, and only those", () => {
   registerCSS(`
     ${CONTAINER_CSS}

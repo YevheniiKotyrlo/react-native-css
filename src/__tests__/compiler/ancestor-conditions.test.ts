@@ -139,6 +139,28 @@ describe("what is not an ancestor query", () => {
   test("an unconditioned ancestor contributes nothing to compile", () => {
     expect(rulesFor(`div .subject { color: red; }`)).toStrictEqual(undefined);
   });
+
+  test("a compound on ONE element is the subject's, not an ancestor's", () => {
+    expect(rulesFor(`[data-state="on"].subject { color: red; }`)).toStrictEqual(
+      [
+        {
+          s: [1, 2],
+          d: [RED],
+          v: INHERITED_COLOR,
+          aq: [["d", "state", "=", "on"]],
+        },
+      ],
+    );
+  });
+
+  test("a combinator the builder does not answer drops the rule rather than widening it", () => {
+    expect(
+      rulesFor(`[data-state="on"] > .subject { color: red; }`),
+    ).toStrictEqual(undefined);
+    expect(rulesFor(`:hover > .subject { color: red; }`)).toStrictEqual(
+      undefined,
+    );
+  });
 });
 
 describe("determinism", () => {
