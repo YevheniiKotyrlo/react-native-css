@@ -56,7 +56,8 @@ export function updateRules(
     currentProps?.dir,
   );
   const directionality =
-    declaredDirectionality ?? resolveInheritedDirectionality(inheritedVariables);
+    declaredDirectionality ??
+    resolveInheritedDirectionality(inheritedVariables);
   guards.push(["a", "dir", currentProps?.dir]);
   guards.push([
     "v",
@@ -67,6 +68,12 @@ export function updateRules(
   if (declaredDirectionality !== undefined) {
     variables = { ...inheritedVariables };
     rules.add(resolveUaDirectionRule(declaredDirectionality));
+  } else if (
+    currentProps &&
+    Object.prototype.hasOwnProperty.call(currentProps, "dir")
+  ) {
+    // Provide a scope while nothing is declared too, so a dir that comes or goes keeps a consistent render tree
+    variables = inheritedVariables;
   }
 
   for (const config of state.configs) {

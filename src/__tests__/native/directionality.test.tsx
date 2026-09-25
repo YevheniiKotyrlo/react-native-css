@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { I18nManager, type StyleProp, type ViewStyle } from "react-native";
 
 import { render, screen } from "@testing-library/react-native";
@@ -284,6 +285,31 @@ test("a removed declaration falls back to what the element would have had withou
   rerender(tree(undefined));
   expect(screen.getByTestId("descendant")).toHaveStyle(LTR);
   expect(screen.getByTestId("descendant")).not.toHaveStyle(RTL);
+});
+
+test("a dir that comes or goes keeps the element's children mounted", () => {
+  registerCSS(DIRECTION_CSS);
+
+  let mounts = 0;
+  const Descendant = () => {
+    useEffect(() => {
+      mounts += 1;
+    }, []);
+    return <View testID="descendant" className="paint" />;
+  };
+  const tree = (dir: "rtl" | undefined) => (
+    <View dir={dir}>
+      <Descendant />
+    </View>
+  );
+
+  const { rerender } = render(tree(undefined));
+  rerender(tree("rtl"));
+  expect(screen.getByTestId("descendant")).toHaveStyle(RTL);
+
+  rerender(tree(undefined));
+  expect(screen.getByTestId("descendant")).toHaveStyle(LTR);
+  expect(mounts).toBe(1);
 });
 
 test("a Text declares its directionality the same way, and takes the text-side UA rule", () => {
