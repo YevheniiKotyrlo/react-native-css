@@ -22,9 +22,10 @@ describe("every other syntax problem is surfaced", () => {
     });
   });
 
+  // `float` rather than a property React Native may yet gain: Yoga lays out flexbox and has no floats.
   test("a property with no React Native equivalent is reported on its own channel", () => {
-    expect(compile(`.a { mix-blend-mode: darken }`).warnings()).toStrictEqual({
-      properties: ["mix-blend-mode"],
+    expect(compile(`.a { float: left }`).warnings()).toStrictEqual({
+      properties: ["float"],
     });
   });
 
