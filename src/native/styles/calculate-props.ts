@@ -13,6 +13,7 @@ import {
   type Getter,
   type VariableContextValue,
 } from "../reactivity";
+import { ShortHandSymbol } from "./constants";
 import { transformKeys } from "./defaults";
 import { resolveValue } from "./resolve";
 
@@ -32,6 +33,7 @@ export function calculateProps(
 
   const delayedStyles: (() => void)[] = [];
   const transformStyles: (() => void)[] = [];
+  const cascade = createCascade();
 
   for (const rule of rules) {
     if (VAR_SYMBOL in rule) {
@@ -75,6 +77,7 @@ export function calculateProps(
         guards,
         target,
         topLevelTarget,
+        cascade,
       );
     }
   }
@@ -94,6 +97,73 @@ export function calculateProps(
   };
 }
 
+// The cascade position of the declaration that last set each key of each target, since a deferred declaration resolves after every later one
+interface Cascade {
+  readonly writers: WeakMap<object, Map<string | number, number>>;
+  readonly next: () => number;
+}
+
+function createCascade(): Cascade {
+  let position = 0;
+
+  return { writers: new WeakMap(), next: () => position++ };
+}
+
+function claim(
+  cascade: Cascade,
+  target: object,
+  key: string | number,
+  position: number,
+): boolean {
+  let writers = cascade.writers.get(target);
+
+  if (writers === undefined) {
+    writers = new Map();
+    cascade.writers.set(target, writers);
+  }
+
+  const holder = writers.get(key);
+
+  if (holder !== undefined && holder > position) {
+    return false;
+  }
+
+  writers.set(key, position);
+  return true;
+}
+
+function isShorthandObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" && value !== null && ShortHandSymbol in value
+  );
+}
+
+// A shorthand learns its keys only once it resolves, so each key is claimed on its own
+function applyInCascade(
+  cascade: Cascade,
+  target: Record<string, any>,
+  prop: string | number,
+  value: unknown,
+  position: number,
+) {
+  if (!isShorthandObject(value)) {
+    if (claim(cascade, target, prop, position)) {
+      applyValue(target, prop as string, value);
+    }
+    return;
+  }
+
+  const kept: Record<string | symbol, unknown> = { [ShortHandSymbol]: true };
+
+  for (const [key, keyValue] of Object.entries(value)) {
+    if (claim(cascade, target, key, position)) {
+      kept[key] = keyValue;
+    }
+  }
+
+  applyValue(target, prop as string, kept);
+}
+
 export function applyDeclarations(
   get: Getter,
   declarations: StyleDeclaration[],
@@ -104,13 +174,19 @@ export function applyDeclarations(
   guards: RenderGuard[] = [],
   target: Record<string, any> = {},
   topLevelTarget = target,
+  cascade: Cascade = createCascade(),
 ) {
   for (const declaration of declarations) {
     // Each declaration's own binding, since its deferred closure runs after the walk has moved on
     let declarationTarget = target;
+    const position = cascade.next();
 
     if (!Array.isArray(declaration)) {
       // Static styles
+      for (const key of Object.keys(declaration)) {
+        claim(cascade, declarationTarget, key, position);
+      }
+
       Object.assign(declarationTarget, declaration);
     } else {
       // Dynamic styles
@@ -161,56 +237,60 @@ export function applyDeclarations(
         prop = propPath;
       }
 
-      const shouldDelay = declaration[2];
-
-      if (shouldDelay || transformKeys.has(prop)) {
-        /**
-         * We need to delay the resolution of this value until after all
-         * styles have been calculated. But another style might override
-         * this value. So we set a placeholder value and only override
-         * if the placeholder is preserved
-         *
-         * This also ensures the props exist, so setValue will properly
-         * mutate the props object and not create a new one
-         */
+      if (transformKeys.has(prop)) {
         const originalValue = value;
-        // This needs to be a object with the [prop] so we can discover in transform arrays
+        // An object keyed by the prop lets the transform array find this entry
         value = { [prop]: true };
 
-        if (transformKeys.has(prop)) {
-          transformStyles.push(() => {
-            value = resolveValue(originalValue, get, {
-              inlineVariables,
-              inheritedVariables,
-              renderGuards: guards,
-              calculateProps,
-            });
-            applyValue(declarationTarget, prop, value);
+        transformStyles.push(() => {
+          value = resolveValue(originalValue, get, {
+            inlineVariables,
+            inheritedVariables,
+            renderGuards: guards,
+            calculateProps,
           });
-        } else {
-          delayedStyles.push(() => {
-            if (getDeepPath(declarationTarget, prop) === value) {
-              delete declarationTarget[prop];
-              value = resolveValue(originalValue, get, {
+          applyValue(declarationTarget, prop, value);
+        });
+
+        applyValue(declarationTarget, prop, value);
+      } else if (declaration[2]) {
+        const originalValue = value;
+        // Resolved once every declaration is walked; a later declaration of the same key replaces the placeholder
+        const placeholder = { [prop]: true };
+
+        delayedStyles.push(() => {
+          if (getDeepPath(declarationTarget, prop) === placeholder) {
+            delete declarationTarget[prop];
+            applyInCascade(
+              cascade,
+              declarationTarget,
+              prop,
+              resolveValue(originalValue, get, {
                 inlineVariables,
                 inheritedVariables,
                 renderGuards: guards,
                 calculateProps,
-              });
-              applyValue(declarationTarget, prop, value);
-            }
-          });
-        }
-      } else {
-        value = resolveValue(value, get, {
-          inlineVariables,
-          inheritedVariables,
-          renderGuards: guards,
-          calculateProps,
+              }),
+              position,
+            );
+          }
         });
-      }
 
-      applyValue(declarationTarget, prop, value);
+        applyInCascade(cascade, declarationTarget, prop, placeholder, position);
+      } else {
+        applyInCascade(
+          cascade,
+          declarationTarget,
+          prop,
+          resolveValue(value, get, {
+            inlineVariables,
+            inheritedVariables,
+            renderGuards: guards,
+            calculateProps,
+          }),
+          position,
+        );
+      }
     }
   }
 }
