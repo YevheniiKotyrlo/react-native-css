@@ -105,14 +105,13 @@ export function applyDeclarations(
   target: Record<string, any> = {},
   topLevelTarget = target,
 ) {
-  const originalTarget = target;
-
   for (const declaration of declarations) {
-    target = originalTarget;
+    // Each declaration's own binding, since its deferred closure runs after the walk has moved on
+    let declarationTarget = target;
 
     if (!Array.isArray(declaration)) {
       // Static styles
-      Object.assign(target, declaration);
+      Object.assign(declarationTarget, declaration);
     } else {
       // Dynamic styles
       let value: any = declaration[0];
@@ -131,7 +130,7 @@ export function applyDeclarations(
         if (final) {
           if (first !== "&") {
             topLevelTarget[first] ??= {};
-            target = topLevelTarget[first];
+            declarationTarget = topLevelTarget[first];
           }
 
           let previousProp: string | number = first;
@@ -143,19 +142,19 @@ export function applyDeclarations(
 
               if (!Array.isArray(previousTarget[previousProp])) {
                 previousTarget[previousProp] = [];
-                target = previousTarget[previousProp];
+                declarationTarget = previousTarget[previousProp];
               }
             }
-            previousTarget = target;
+            previousTarget = declarationTarget;
             previousProp = prop;
 
-            target[prop] ??= {};
-            target = target[prop];
+            declarationTarget[prop] ??= {};
+            declarationTarget = declarationTarget[prop];
           }
 
           prop = final;
         } else {
-          target = topLevelTarget;
+          declarationTarget = topLevelTarget;
           prop = first;
         }
       } else {
@@ -186,19 +185,19 @@ export function applyDeclarations(
               renderGuards: guards,
               calculateProps,
             });
-            applyValue(target, prop, value);
+            applyValue(declarationTarget, prop, value);
           });
         } else {
           delayedStyles.push(() => {
-            if (getDeepPath(target, prop) === value) {
-              delete target[prop];
+            if (getDeepPath(declarationTarget, prop) === value) {
+              delete declarationTarget[prop];
               value = resolveValue(originalValue, get, {
                 inlineVariables,
                 inheritedVariables,
                 renderGuards: guards,
                 calculateProps,
               });
-              applyValue(target, prop, value);
+              applyValue(declarationTarget, prop, value);
             }
           });
         }
@@ -211,7 +210,7 @@ export function applyDeclarations(
         });
       }
 
-      applyValue(target, prop, value);
+      applyValue(declarationTarget, prop, value);
     }
   }
 }
