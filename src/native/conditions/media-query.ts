@@ -130,6 +130,8 @@ function getMediaFeatureValue(
       return get(vw);
     case "height":
       return get(vh);
+    case "aspect-ratio":
+      return get(vw) / get(vh);
     case "resolution":
       return PixelRatio.get();
     case "orientation":
