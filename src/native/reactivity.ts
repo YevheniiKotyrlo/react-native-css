@@ -137,6 +137,12 @@ export function cleanupEffect(effect: Effect) {
   }
 }
 
+/** What a render read before its component committed, each observable beside the value it answered. */
+export type RenderReads = readonly (readonly [
+  observable: Observable<any, any>,
+  value: unknown,
+])[];
+
 /**
  * An effect that runs nothing: it keeps what a render read cached for a component React may still
  * throw away (Suspense, an interrupted transition), so nothing it reads can update that component.
@@ -145,14 +151,24 @@ export function createRenderHold(): Effect {
   return { observers: new Set(), run() {} };
 }
 
-/** Read through `hold`, which the commit releases, or the task's microtasks if no commit comes. */
-export function readBeforeCommit<Value>(
-  observable: Observable<Value, any>,
-  hold: Effect,
-): Value {
-  const value = observable.get(hold);
+/**
+ * A getter that reads through `hold` and records each read. The commit releases the hold, and the
+ * task's microtasks release it when no commit comes.
+ */
+export function readBeforeCommit(hold: Effect): {
+  read: Getter;
+  reads: RenderReads;
+} {
+  const reads: (readonly [Observable<any, any>, unknown])[] = [];
   queueMicrotask(() => cleanupEffect(hold));
-  return value;
+  return {
+    read: (observable) => {
+      const value = observable.get(hold);
+      reads.push([observable, value]);
+      return value;
+    },
+    reads,
+  };
 }
 
 /** Family Helpers ************************************************************/

@@ -23,10 +23,11 @@ import {
   type ContainerContextValue,
   type Effect,
   type Getter,
+  type RenderReads,
   type VariableContextValue,
 } from "../reactivity";
 import { animatedComponentFamily } from "../reanimated";
-import { getStyledProps, stylesFamily, type ComputedStyles } from "../styles";
+import { getStyledProps, stylesFamily } from "../styles";
 import { updateRules } from "./rules";
 
 export type Config = {
@@ -61,11 +62,6 @@ export type ComponentState = {
 
   animated?: boolean;
   pressable?: undefined | boolean;
-};
-
-type UncommittedStyles = {
-  observable: ReturnType<typeof stylesFamily>;
-  value: ComputedStyles;
 };
 
 /**
@@ -126,17 +122,22 @@ export function useNativeCss(
   });
 
   const committed = useRef(false);
-  const uncommittedStyles = useRef<UncommittedStyles | undefined>(undefined);
+  const renderReads = useRef<RenderReads>([]);
 
   // A render before the first commit subscribes only the hold, so the style effect subscribes here
   // and catches up with any change since that render read its styles.
   useLayoutEffect(() => {
     committed.current = true;
-    const rendered = uncommittedStyles.current;
-    uncommittedStyles.current = undefined;
-    const current = rendered?.observable.get(state.styleEffect);
+    const reads = renderReads.current;
+    renderReads.current = [];
+    let moved = false;
+    for (const [observable, value] of reads) {
+      if (!Object.is(observable.get(state.styleEffect), value)) {
+        moved = true;
+      }
+    }
     cleanupEffect(state.renderHold);
-    if (rendered && !Object.is(current, rendered.value)) {
+    if (moved) {
       state.styleEffect.run();
     }
     return () => {
@@ -178,20 +179,16 @@ export function useNativeCss(
     return createElement(Fragment);
   }
 
-  let styledProps: ComputedStyles | undefined;
-  if (committed.current) {
-    styledProps = state.stylesObs?.get(state.styleEffect);
-  } else if (state.stylesObs) {
-    styledProps = readBeforeCommit(state.stylesObs, state.renderHold);
-    uncommittedStyles.current = {
-      observable: state.stylesObs,
-      value: styledProps,
-    };
+  let readStyles: Getter = (observable) => observable.get(state.styleEffect);
+  if (!committed.current) {
+    const beforeCommit = readBeforeCommit(state.renderHold);
+    renderReads.current = beforeCommit.reads;
+    readStyles = beforeCommit.read;
   }
 
   let props = getStyledProps(
     state,
-    styledProps,
+    readStyles,
     originalProps,
     type === Image ? adaptImageProps : undefined,
   );
