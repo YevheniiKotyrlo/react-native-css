@@ -1,7 +1,7 @@
-import { StrictMode, Suspense, use, useLayoutEffect } from "react";
+import { startTransition, StrictMode, Suspense, use } from "react";
 import { Text } from "react-native";
 
-import { act, render } from "@testing-library/react-native";
+import { act, render, renderAsync } from "@testing-library/react-native";
 import { View } from "react-native-css/components/View";
 import { registerCSS } from "react-native-css/jest";
 import { useNativeVariable } from "react-native-css/native";
@@ -11,6 +11,7 @@ import {
 } from "react-native-css/native-internal";
 
 import { cleanupEffect, observable, vw } from "../../native/reactivity";
+import * as calculatePropsModule from "../../native/styles/calculate-props";
 
 test("cleaned observers receive no later notifications", () => {
   const value = observable(0);
@@ -194,16 +195,17 @@ test("a viewport change between render and commit reaches the element once it co
   }
 });
 
+function NeverResolves() {
+  return use(neverResolves);
+}
+
 test("a render React discards leaves no subscription and takes no later update", async () => {
   registerCSS(".audit-discarded-render { width: 10vw; }");
   const original = vw.get();
   const before = vw.observers.size;
   const errors = captureConsoleErrors();
-  function NeverResolves() {
-    return use(neverResolves);
-  }
   try {
-    const screen = render(
+    const screen = await renderAsync(
       <Suspense fallback={<Text testID="fallback">loading</Text>}>
         <View testID="sample" className="audit-discarded-render" />
         <NeverResolves />
@@ -211,17 +213,13 @@ test("a render React discards leaves no subscription and takes no later update",
     );
     expect(screen.getByTestId("fallback")).toBeTruthy();
     expect(screen.queryByTestId("sample")).toBeNull();
-    await Promise.resolve();
     expect(vw.observers.size).toBe(before);
-    act(() => {
+    await act(() => {
       vw.set(900);
+      return Promise.resolve();
     });
-    expect(
-      errors
-        .messages()
-        .filter((message) => message.includes("hasn't mounted yet")),
-    ).toEqual([]);
-    screen.unmount();
+    expect(errors.messages()).toEqual([]);
+    await screen.unmountAsync();
   } finally {
     errors.restore();
     act(() => {
@@ -230,31 +228,63 @@ test("a render React discards leaves no subscription and takes no later update",
   }
 });
 
-test("committing an element computes none of the styles its render read", () => {
-  registerCSS(".audit-commit-read { width: 10vw; }");
-  const reads = jest.spyOn(vw, "get");
-  const counted: { rendered?: number; committed?: number } = {};
-  function CountReads() {
-    counted.rendered = reads.mock.calls.length;
-    useLayoutEffect(() => {
-      counted.committed = reads.mock.calls.length;
-    }, []);
-    return null;
-  }
+test("mounting an element computes its styles once", () => {
+  registerCSS(".audit-single-computation { width: 10vw; }");
+  const computations = jest.spyOn(calculatePropsModule, "calculateProps");
   try {
     const screen = render(
-      <>
-        {Array.from({ length: 10 }, (_, index) => (
-          <View key={index} className="audit-commit-read" />
-        ))}
-        <CountReads />
-      </>,
+      <View testID="sample" className="audit-single-computation" />,
     );
-    expect(counted.rendered).toBeGreaterThan(0);
-    expect(counted.committed).toBe(counted.rendered);
+    expect(screen.getByTestId("sample").props.style.width).toBeGreaterThan(0);
+    expect(computations).toHaveBeenCalledTimes(1);
     screen.unmount();
   } finally {
-    reads.mockRestore();
+    computations.mockRestore();
+  }
+});
+
+test("a render React discards leaves the committed element subscribed", async () => {
+  registerCSS(
+    ".audit-kept-first { width: 10vw; } .audit-kept-second { width: 20px; }",
+  );
+  const original = vw.get();
+  function Sample({
+    className,
+    suspended,
+  }: {
+    className: string;
+    suspended: boolean;
+  }) {
+    return (
+      <>
+        <View testID="sample" className={className} />
+        <Suspense fallback={null}>
+          {suspended ? <NeverResolves /> : null}
+        </Suspense>
+      </>
+    );
+  }
+  const screen = render(
+    <Sample className="audit-kept-first" suspended={false} />,
+  );
+  try {
+    await act(() => {
+      startTransition(() => {
+        screen.rerender(<Sample className="audit-kept-second" suspended />);
+      });
+      return Promise.resolve();
+    });
+    expect(screen.getByTestId("sample").props.style.width).toBe(original / 10);
+    await act(() => {
+      vw.set(1000);
+      return Promise.resolve();
+    });
+    expect(screen.getByTestId("sample").props.style.width).toBe(100);
+  } finally {
+    screen.unmount();
+    act(() => {
+      vw.set(original);
+    });
   }
 });
 

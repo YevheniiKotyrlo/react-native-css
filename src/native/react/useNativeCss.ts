@@ -5,7 +5,6 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
-  useRef,
   useState,
   type ComponentType,
 } from "react";
@@ -18,12 +17,11 @@ import { testGuards, type RenderGuard } from "../conditions/guards";
 import {
   cleanupEffect,
   ContainerContext,
-  createRenderHold,
-  readBeforeCommit,
+  observeReads,
+  recordReads,
   type ContainerContextValue,
   type Effect,
   type Getter,
-  type RenderReads,
   type VariableContextValue,
 } from "../reactivity";
 import { animatedComponentFamily } from "../reanimated";
@@ -44,8 +42,6 @@ export type ComponentState = {
   ruleEffect: Effect;
   ruleEffectGetter: Getter;
   styleEffect: Effect;
-  /** Holds what a render read until the component commits */
-  renderHold: Effect;
 
   /** The components props */
   currentProps?: Record<string, any> | undefined | null;
@@ -103,7 +99,6 @@ export function useNativeCss(
         ruleEffect,
         ruleEffectGetter: (observable) => observable.get(ruleEffect),
         styleEffect,
-        renderHold: createRenderHold(),
         configs,
         inheritedContainers,
         inheritedVariables,
@@ -121,41 +116,31 @@ export function useNativeCss(
     return initialState;
   });
 
-  const committed = useRef(false);
-  const renderReads = useRef<RenderReads>([]);
+  // React may discard a render, so a render subscribes nothing and its commit subscribes what it read
+  const styleReads = recordReads();
 
-  // A render before the first commit subscribes only the hold, so the style effect subscribes here
-  // and catches up with any change since that render read its styles.
   useLayoutEffect(() => {
-    committed.current = true;
-    const reads = renderReads.current;
-    renderReads.current = [];
-    let moved = false;
-    for (const [observable, value] of reads) {
-      if (!Object.is(observable.get(state.styleEffect), value)) {
-        moved = true;
-      }
-    }
-    cleanupEffect(state.renderHold);
-    if (moved) {
+    if (observeReads(state.styleEffect, styleReads.reads) === "moved") {
       state.styleEffect.run();
     }
-    return () => {
-      committed.current = false;
-    };
-  }, [state.styleEffect, state.renderHold]);
+  });
+
+  useLayoutEffect(
+    () => () => {
+      cleanupEffect(state.styleEffect);
+    },
+    [state.styleEffect],
+  );
 
   useEffect(() => {
     // Reconnect subscriptions after React replays an effect setup.
     if (state.ruleEffect.observers.size === 0) {
       state.ruleEffect.run();
-      state.styleEffect.run();
     }
     return () => {
       cleanupEffect(state.ruleEffect);
-      cleanupEffect(state.styleEffect);
     };
-  }, [state.ruleEffect, state.styleEffect]);
+  }, [state.ruleEffect]);
 
   // Check if our derived state has changed (e.g the className prop)
   if (
@@ -179,16 +164,9 @@ export function useNativeCss(
     return createElement(Fragment);
   }
 
-  let readStyles: Getter = (observable) => observable.get(state.styleEffect);
-  if (!committed.current) {
-    const beforeCommit = readBeforeCommit(state.renderHold);
-    renderReads.current = beforeCommit.reads;
-    readStyles = beforeCommit.read;
-  }
-
   let props = getStyledProps(
     state,
-    readStyles,
+    styleReads.read,
     originalProps,
     type === Image ? adaptImageProps : undefined,
   );
