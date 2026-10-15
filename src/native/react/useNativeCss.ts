@@ -4,6 +4,8 @@ import {
   Fragment,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentType,
 } from "react";
@@ -16,13 +18,15 @@ import { testGuards, type RenderGuard } from "../conditions/guards";
 import {
   cleanupEffect,
   ContainerContext,
+  createRenderHold,
+  readBeforeCommit,
   type ContainerContextValue,
   type Effect,
   type Getter,
   type VariableContextValue,
 } from "../reactivity";
 import { animatedComponentFamily } from "../reanimated";
-import { getStyledProps, stylesFamily } from "../styles";
+import { getStyledProps, stylesFamily, type ComputedStyles } from "../styles";
 import { updateRules } from "./rules";
 
 export type Config = {
@@ -39,6 +43,8 @@ export type ComponentState = {
   ruleEffect: Effect;
   ruleEffectGetter: Getter;
   styleEffect: Effect;
+  /** Holds what a render read until the component commits */
+  renderHold: Effect;
 
   /** The components props */
   currentProps?: Record<string, any> | undefined | null;
@@ -55,6 +61,11 @@ export type ComponentState = {
 
   animated?: boolean;
   pressable?: undefined | boolean;
+};
+
+type UncommittedStyles = {
+  observable: ReturnType<typeof stylesFamily>;
+  value: ComputedStyles;
 };
 
 /**
@@ -96,6 +107,7 @@ export function useNativeCss(
         ruleEffect,
         ruleEffectGetter: (observable) => observable.get(ruleEffect),
         styleEffect,
+        renderHold: createRenderHold(),
         configs,
         inheritedContainers,
         inheritedVariables,
@@ -112,6 +124,25 @@ export function useNativeCss(
     cleanupEffect(ruleEffect);
     return initialState;
   });
+
+  const committed = useRef(false);
+  const uncommittedStyles = useRef<UncommittedStyles | undefined>(undefined);
+
+  // A render before the first commit subscribes only the hold, so the style effect subscribes here
+  // and catches up with any change since that render read its styles.
+  useLayoutEffect(() => {
+    committed.current = true;
+    const rendered = uncommittedStyles.current;
+    uncommittedStyles.current = undefined;
+    const current = rendered?.observable.get(state.styleEffect);
+    cleanupEffect(state.renderHold);
+    if (rendered && !Object.is(current, rendered.value)) {
+      state.styleEffect.run();
+    }
+    return () => {
+      committed.current = false;
+    };
+  }, [state.styleEffect, state.renderHold]);
 
   useEffect(() => {
     // Reconnect subscriptions after React replays an effect setup.
@@ -147,8 +178,20 @@ export function useNativeCss(
     return createElement(Fragment);
   }
 
+  let styledProps: ComputedStyles | undefined;
+  if (committed.current) {
+    styledProps = state.stylesObs?.get(state.styleEffect);
+  } else if (state.stylesObs) {
+    styledProps = readBeforeCommit(state.stylesObs, state.renderHold);
+    uncommittedStyles.current = {
+      observable: state.stylesObs,
+      value: styledProps,
+    };
+  }
+
   let props = getStyledProps(
     state,
+    styledProps,
     originalProps,
     type === Image ? adaptImageProps : undefined,
   );

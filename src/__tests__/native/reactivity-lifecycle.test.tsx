@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, Suspense, use, useLayoutEffect } from "react";
 import { Text } from "react-native";
 
 import { act, render } from "@testing-library/react-native";
@@ -154,6 +154,108 @@ test("StrictMode viewport consumers remain reactive and release subscriptions", 
   act(() => {
     vw.set(original);
   });
+});
+
+function captureConsoleErrors() {
+  const error = jest.spyOn(console, "error").mockImplementation(jest.fn());
+  return {
+    messages: () => error.mock.calls.map(([message]) => String(message)),
+    restore: () => {
+      error.mockRestore();
+    },
+  };
+}
+
+const neverResolves = new Promise<never>(jest.fn());
+
+test("a viewport change between render and commit reaches the element once it commits", () => {
+  registerCSS(".audit-render-window { width: 10vw; }");
+  const original = vw.get();
+  const errors = captureConsoleErrors();
+  function ResizeDuringRender() {
+    vw.set(800);
+    return null;
+  }
+  try {
+    const screen = render(
+      <>
+        <View testID="sample" className="audit-render-window" />
+        <ResizeDuringRender />
+      </>,
+    );
+    expect(errors.messages()).toEqual([]);
+    expect(screen.getByTestId("sample").props.style.width).toBe(80);
+    screen.unmount();
+  } finally {
+    errors.restore();
+    act(() => {
+      vw.set(original);
+    });
+  }
+});
+
+test("a render React discards leaves no subscription and takes no later update", async () => {
+  registerCSS(".audit-discarded-render { width: 10vw; }");
+  const original = vw.get();
+  const before = vw.observers.size;
+  const errors = captureConsoleErrors();
+  function NeverResolves() {
+    return use(neverResolves);
+  }
+  try {
+    const screen = render(
+      <Suspense fallback={<Text testID="fallback">loading</Text>}>
+        <View testID="sample" className="audit-discarded-render" />
+        <NeverResolves />
+      </Suspense>,
+    );
+    expect(screen.getByTestId("fallback")).toBeTruthy();
+    expect(screen.queryByTestId("sample")).toBeNull();
+    await Promise.resolve();
+    expect(vw.observers.size).toBe(before);
+    act(() => {
+      vw.set(900);
+    });
+    expect(
+      errors
+        .messages()
+        .filter((message) => message.includes("hasn't mounted yet")),
+    ).toEqual([]);
+    screen.unmount();
+  } finally {
+    errors.restore();
+    act(() => {
+      vw.set(original);
+    });
+  }
+});
+
+test("committing an element computes none of the styles its render read", () => {
+  registerCSS(".audit-commit-read { width: 10vw; }");
+  const reads = jest.spyOn(vw, "get");
+  const counted: { rendered?: number; committed?: number } = {};
+  function CountReads() {
+    counted.rendered = reads.mock.calls.length;
+    useLayoutEffect(() => {
+      counted.committed = reads.mock.calls.length;
+    }, []);
+    return null;
+  }
+  try {
+    const screen = render(
+      <>
+        {Array.from({ length: 10 }, (_, index) => (
+          <View key={index} className="audit-commit-read" />
+        ))}
+        <CountReads />
+      </>,
+    );
+    expect(counted.rendered).toBeGreaterThan(0);
+    expect(counted.committed).toBe(counted.rendered);
+    screen.unmount();
+  } finally {
+    reads.mockRestore();
+  }
 });
 
 test("class changes detach the old rule subscription", () => {

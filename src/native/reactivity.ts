@@ -137,6 +137,24 @@ export function cleanupEffect(effect: Effect) {
   }
 }
 
+/**
+ * An effect that runs nothing: it keeps what a render read cached for a component React may still
+ * throw away (Suspense, an interrupted transition), so nothing it reads can update that component.
+ */
+export function createRenderHold(): Effect {
+  return { observers: new Set(), run() {} };
+}
+
+/** Read through `hold`, which the commit releases, or the task's microtasks if no commit comes. */
+export function readBeforeCommit<Value>(
+  observable: Observable<Value, any>,
+  hold: Effect,
+): Value {
+  const value = observable.get(hold);
+  queueMicrotask(() => cleanupEffect(hold));
+  return value;
+}
+
 /** Family Helpers ************************************************************/
 
 export function family<Key, Result = Key, Args extends any = void>(

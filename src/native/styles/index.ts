@@ -184,16 +184,17 @@ export const stylesFamily = family(
   },
 );
 
+export type ComputedStyles = ReturnType<ReturnType<typeof stylesFamily>["get"]>;
+
 export function getStyledProps(
   state: ComponentState,
+  styledProps: ComputedStyles | undefined,
   inline: Record<string, any> | undefined | null,
   adaptProps: (
     props: Record<string, any> | undefined,
   ) => Record<string, any> | undefined = (props) => props,
 ) {
   let result: Record<string, any> | undefined;
-
-  const styledProps = state.stylesObs?.get(state.styleEffect);
 
   // Each config merges a complete props object. Preserve its full target path
   // before the next config merges unrelated inline props over that object.
