@@ -196,6 +196,21 @@ export function recordReads(): { read: Getter; reads: RenderReads } {
   };
 }
 
+/** Whether two passes read the same observables, whatever their versions */
+export function readSameObservables(left: RenderReads, right: RenderReads) {
+  const leftObservables = new Set(left.map(([observable]) => observable));
+  const rightObservables = new Set(right.map(([observable]) => observable));
+  if (leftObservables.size !== rightObservables.size) {
+    return false;
+  }
+  for (const observable of leftObservables) {
+    if (!rightObservables.has(observable)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Make `effect` observe exactly what a committed render read, answering whether any of it moved since */
 export function observeReads(
   effect: Effect,
