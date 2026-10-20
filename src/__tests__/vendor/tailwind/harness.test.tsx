@@ -1,4 +1,4 @@
-import { View } from "react-native-css/components";
+import { Text, View } from "react-native-css/components";
 
 import { render } from "./_tailwind";
 
@@ -50,4 +50,16 @@ test("a render leaves a caller's console.error spy in place", async () => {
   } finally {
     consoleError.mockRestore();
   }
+});
+
+test("a render collects the classes of a tree with text and empty children", async () => {
+  const { stylesheet } = await render(
+    <View className="left-0">
+      <Text>label</Text>
+      {null}
+      {false}
+    </View>,
+  );
+
+  expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-0"]);
 });
