@@ -3,9 +3,9 @@ import tBabelTypes, { type CallExpression } from "@babel/types";
 export type BabelTypes = typeof tBabelTypes;
 
 export interface PluginOpts {
-  target?: string;
-  runtime?: string;
-  commonjs?: boolean;
+  target?: string | undefined;
+  runtime?: string | undefined;
+  commonjs?: boolean | undefined;
 }
 
 export interface PluginState {
