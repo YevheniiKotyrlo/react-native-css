@@ -16,12 +16,12 @@ import type {
   ViewStyle,
 } from "react-native";
 
-import type { DotNotation, ResolveDotPath } from "react-native-css/utilities";
+import type { DotNotation } from "react-native-css/utilities";
 
 /********************************     API      ********************************/
 
 type StyledSourceProps<M> = {
-  [K in keyof M as K extends string
+  -readonly [K in keyof M as K extends string
     ? M[K] extends undefined | false
       ? never
       : M[K] extends true | string | object
@@ -77,29 +77,18 @@ interface StyledConfigurationObject<
   T extends ComponentPropsDotNotation<C> | false,
 > {
   target: T;
-  nativeStyleMapping?:
-    | (T extends false
-        ? NativeStyleMapping<string, ComponentProps<C>>
-        : NativeStyleMapping<
-            ResolveDotPath<ComponentProps<C>, Extract<T, string>>,
-            ComponentProps<C>
-          >)
-    | undefined;
+  nativeStyleMapping?: NativeStyleMapping<ComponentProps<C>> | undefined;
   /** @deprecated Please use nativeStyleMapping */
   nativeStyleToProp?: StyledConfigurationObject<C, T>["nativeStyleMapping"];
 }
 
-type NativeStyleMapping<T, S> = T extends object
-  ? {
-      [K in keyof T as K extends string ? K : never]?:
-        | true
-        | DotNotation<S>
-        | undefined;
-    } & {
-      fill?: true | DotNotation<S> | undefined;
-      stroke?: true | DotNotation<S> | undefined;
-    }
-  : Record<string, true | DotNotation<S>>;
+// A -rn- declaration puts its camel-cased name in the style, so a key may be any string beside React Native's style keys
+type NativeStyleMapping<S> = Readonly<
+  Partial<Record<keyof RNStyle | "fill" | "stroke", NativeStyleMappingValue<S>>>
+> &
+  Readonly<Record<string, NativeStyleMappingValue<S>>>;
+
+type NativeStyleMappingValue<S> = true | DotNotation<S> | undefined;
 
 export interface StyledOptions {
   passThrough?: boolean | undefined;

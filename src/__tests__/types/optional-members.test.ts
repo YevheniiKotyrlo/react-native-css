@@ -1,38 +1,30 @@
-import { join } from "node:path";
-
 import ts from "typescript";
 
-const root = join(__dirname, "../../..").replaceAll("\\", "/");
-const declarationFiles = ["types.d.ts", "src/runtime.types.ts"] as const;
+import { createProgram, root } from "./_program";
 
-function createProgram(
-  rootNames: readonly string[],
-  virtualFiles: Readonly<Record<string, string>> = {},
-): ts.Program {
-  const { config } = ts.readConfigFile(`${root}/tsconfig.json`, (path) =>
-    ts.sys.readFile(path),
-  );
-  const { options } = ts.parseJsonConfigFileContent(config, ts.sys, root);
-  const compilerOptions = { ...options, exactOptionalPropertyTypes: true };
-  const host = ts.createCompilerHost(compilerOptions, true);
-
-  return ts.createProgram(rootNames, compilerOptions, {
-    ...host,
-    fileExists: (name) => name in virtualFiles || host.fileExists(name),
-    readFile: (name) => virtualFiles[name] ?? host.readFile(name),
-    getSourceFile: (name, languageVersion, ...rest) => {
-      const text = virtualFiles[name];
-      return text === undefined
-        ? host.getSourceFile(name, languageVersion, ...rest)
-        : ts.createSourceFile(name, text, languageVersion, true);
-    },
-  });
-}
+// Every declaration of a file, or only the option types a consumer writes
+const declarations: readonly (readonly [string, readonly string[] | "all"])[] =
+  [
+    ["types.d.ts", "all"],
+    ["src/runtime.types.ts", "all"],
+    [
+      "src/compiler/compiler.types.ts",
+      ["CompilerOptions", "InlineVariableOptions"],
+    ],
+    ["src/metro/index.ts", ["WithReactNativeCSSOptions"]],
+    [
+      "src/jest/index.ts",
+      ["RegisterCSSOptions", "CompileWithAutoDebugOptions"],
+    ],
+    ["src/babel/helpers.ts", ["PluginOpts"]],
+    ["src/native/react/useNativeCss.ts", ["Config"]],
+  ];
 
 // Under exactOptionalPropertyTypes a bare `?: T` rejects an explicit undefined, which React Native's own optional props accept
 function optionalMembersRejectingUndefined(
   program: ts.Program,
   fileName: string,
+  names: readonly string[] | "all" = "all",
 ): readonly string[] {
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(fileName);
@@ -46,42 +38,72 @@ function optionalMembersRejectingUndefined(
   const typeNodeRejectsUndefined = (node: ts.TypeNode | undefined) =>
     node !== undefined && rejectsUndefined(checker.getTypeFromTypeNode(node));
 
-  // A mapped type over `keyof T`, or over a `K extends keyof T`, keeps T's optional members optional unless it says -?
+  // keyof T through any alias, or a type parameter declared as one
+  const isKeyOfConstraint = (node: ts.TypeNode): boolean => {
+    if ((checker.getTypeFromTypeNode(node).flags & ts.TypeFlags.Index) !== 0) {
+      return true;
+    }
+    const declaration = ts.isTypeReferenceNode(node)
+      ? checker.getSymbolAtLocation(node.typeName)?.declarations?.[0]
+      : undefined;
+    return (
+      declaration !== undefined &&
+      ts.isTypeParameterDeclaration(declaration) &&
+      declaration.constraint !== undefined &&
+      isKeyOfConstraint(declaration.constraint)
+    );
+  };
+
+  // A mapped type over keyof T keeps T's optional members optional unless it says -?
   const isOptionalMappedType = (node: ts.MappedTypeNode): boolean => {
     if (node.questionToken !== undefined) {
       return node.questionToken.kind !== ts.SyntaxKind.MinusToken;
     }
-
     const constraint = node.typeParameter.constraint;
-    if (constraint === undefined) return false;
-    if (isKeyOf(constraint)) return true;
+    return constraint !== undefined && isKeyOfConstraint(constraint);
+  };
 
-    const keyDeclaration = ts.isTypeReferenceNode(constraint)
-      ? checker.getSymbolAtLocation(constraint.typeName)?.declarations?.[0]
-      : undefined;
+  // { [K in keyof T]: T[K] } keeps each member's own type, undefined included
+  const isTransparentMappedType = (node: ts.MappedTypeNode): boolean => {
+    if (node.type === undefined || !ts.isIndexedAccessTypeNode(node.type)) {
+      return false;
+    }
+    const { objectType, indexType } = node.type;
     return (
-      keyDeclaration !== undefined &&
-      ts.isTypeParameterDeclaration(keyDeclaration) &&
-      keyDeclaration.constraint !== undefined &&
-      isKeyOf(keyDeclaration.constraint)
+      ts.isTypeReferenceNode(indexType) &&
+      ts.isIdentifier(indexType.typeName) &&
+      indexType.typeName.text === node.typeParameter.name.text &&
+      node.typeParameter.constraint !== undefined &&
+      ts.isTypeOperatorNode(node.typeParameter.constraint) &&
+      node.typeParameter.constraint.operator === ts.SyntaxKind.KeyOfKeyword &&
+      node.typeParameter.constraint.type.getText(source) ===
+        objectType.getText(source)
     );
   };
 
-  // A library's mapped type that adds `?`, such as Partial, makes optional members of its argument's, which this file never spells out
+  // A library's mapped type that adds `?`, such as Partial, makes members its source file never spells out
   const addsOptionalMembersRejectingUndefined = (
-    node: ts.TypeReferenceNode,
+    node: ts.TypeReferenceNode | ts.ExpressionWithTypeArguments,
   ): boolean => {
-    const type = checker.getTypeFromTypeNode(node);
+    const type = ts.isTypeReferenceNode(node)
+      ? checker.getTypeFromTypeNode(node)
+      : checker.getTypeAtLocation(node);
     const declaration = type.aliasSymbol?.declarations?.[0];
     const argument = type.aliasTypeArguments?.[0];
+    if (
+      declaration === undefined ||
+      argument === undefined ||
+      declaration.getSourceFile() === source ||
+      !ts.isTypeAliasDeclaration(declaration) ||
+      !ts.isMappedTypeNode(declaration.type) ||
+      declaration.type.questionToken === undefined ||
+      declaration.type.questionToken.kind === ts.SyntaxKind.MinusToken
+    ) {
+      return false;
+    }
+    // Over a type parameter nothing proves its members accept undefined
     return (
-      declaration !== undefined &&
-      argument !== undefined &&
-      declaration.getSourceFile() !== source &&
-      ts.isTypeAliasDeclaration(declaration) &&
-      ts.isMappedTypeNode(declaration.type) &&
-      declaration.type.questionToken !== undefined &&
-      declaration.type.questionToken.kind !== ts.SyntaxKind.MinusToken &&
+      argument.isTypeParameter() ||
       checker
         .getPropertiesOfType(argument)
         .some((property) => rejectsUndefined(checker.getTypeOfSymbol(property)))
@@ -102,8 +124,10 @@ function optionalMembersRejectingUndefined(
       (ts.isOptionalTypeNode(node) && typeNodeRejectsUndefined(node.type)) ||
       (ts.isMappedTypeNode(node) &&
         isOptionalMappedType(node) &&
+        !isTransparentMappedType(node) &&
         typeNodeRejectsUndefined(node.type)) ||
-      (ts.isTypeReferenceNode(node) &&
+      ((ts.isTypeReferenceNode(node) ||
+        ts.isExpressionWithTypeArguments(node)) &&
         addsOptionalMembersRejectingUndefined(node));
 
     if (rejects) {
@@ -115,15 +139,22 @@ function optionalMembersRejectingUndefined(
 
     ts.forEachChild(node, visit);
   };
-  visit(source);
+
+  if (names === "all") {
+    visit(source);
+  } else {
+    for (const statement of source.statements) {
+      if (
+        (ts.isInterfaceDeclaration(statement) ||
+          ts.isTypeAliasDeclaration(statement)) &&
+        names.includes(statement.name.text)
+      ) {
+        visit(statement);
+      }
+    }
+  }
 
   return offenders;
-}
-
-function isKeyOf(node: ts.TypeNode): boolean {
-  return (
-    ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.KeyOfKeyword
-  );
 }
 
 test("the walk finds each form of an optional member that rejects undefined, and leaves a never member", () => {
@@ -155,6 +186,13 @@ export type Partly = Partial<{ passThrough: boolean }>;
 export type PartlyWidened = Partial<{ passThrough: boolean | undefined }>;
 export type Pair = [string, number?];
 export type Named = [first: string, second?: number | undefined];
+interface Base { passThrough: boolean }
+export interface ExtendsPartial extends Partial<Base> {}
+export type GenericPartial<T> = Partial<T>;
+type KeysOf<T> = keyof T;
+export type ViaAlias<T> = { [K in KeysOf<T>]: string };
+export type Same<T> = { [K in keyof T]: T[K] };
+export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 `,
   });
 
@@ -167,19 +205,23 @@ export type Named = [first: string, second?: number | undefined];
     "22: { [Q in K]: string }",
     "23: Partial<{ passThrough: boolean }>",
     "25: number?",
+    "28: Partial<Base>",
+    "29: Partial<T>",
+    "31: { [K in KeysOf<T>]: string }",
   ]);
 });
 
-test("every optional member of the declarations accepts an explicit undefined, or is never and must stay absent", () => {
-  const fileNames = declarationFiles.map((file) => `${root}/${file}`);
-  const program = createProgram(fileNames);
+test("every optional member a consumer writes accepts an explicit undefined, or is never and must stay absent", () => {
+  const program = createProgram(
+    declarations.map(([file]) => `${root}/${file}`),
+  );
 
   expect(
     Object.fromEntries(
-      declarationFiles.map((file) => [
+      declarations.map(([file, names]) => [
         file,
-        optionalMembersRejectingUndefined(program, `${root}/${file}`),
+        optionalMembersRejectingUndefined(program, `${root}/${file}`, names),
       ]),
     ),
-  ).toStrictEqual({ "types.d.ts": [], "src/runtime.types.ts": [] });
+  ).toStrictEqual(Object.fromEntries(declarations.map(([file]) => [file, []])));
 });

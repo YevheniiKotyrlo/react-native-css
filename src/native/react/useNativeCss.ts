@@ -28,7 +28,7 @@ import { updateRules } from "./rules";
 export type Config = {
   source: string;
   target: string[] | string | false;
-  nativeStyleMapping?: Record<string, string>;
+  nativeStyleMapping?: Record<string, string> | undefined;
 };
 
 export type ComponentState = {
