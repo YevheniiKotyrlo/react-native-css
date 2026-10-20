@@ -27,3 +27,27 @@ test("a render whose CSS fails to compile rejects", async () => {
     render(<View className="left-0" />, { css: '@import "./missing.css";' }),
   ).rejects.toThrow("Can't resolve './missing.css'");
 });
+
+test("a render after one whose CSS uses no Tailwind feature compiles its own classes", async () => {
+  await render(<View className="left-0" />, {
+    css: "@theme { --color-brand: red; }",
+  });
+  const { stylesheet } = await render(<View className="left-1" />);
+
+  expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-1"]);
+});
+
+test("a render leaves a caller's console.error spy in place", async () => {
+  const consoleError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => undefined);
+
+  try {
+    await render(<View className="left-0" />);
+    console.error("after the render");
+
+    expect(consoleError).toHaveBeenCalledWith("after the render");
+  } finally {
+    consoleError.mockRestore();
+  }
+});

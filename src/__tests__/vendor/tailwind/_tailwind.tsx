@@ -1,24 +1,16 @@
 import type { PropsWithChildren, ReactElement } from "react";
 
-import { join } from "node:path";
-
-import tailwind from "@tailwindcss/postcss";
+import { compile as compileTailwindCss } from "@tailwindcss/node";
 import {
   screen,
   render as tlRender,
   type RenderOptions,
 } from "@testing-library/react-native";
-import postcss from "postcss";
 import type { compile } from "react-native-css/compiler";
 import { View } from "react-native-css/components";
 import { registerCSS } from "react-native-css/jest";
 
 const testID = "tailwind";
-
-// The plugin reuses a cached compiler until a file it read changes, and compiles afresh whenever no file is at `from`, so `from` names none: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L182-L196
-const from = join(__dirname, "input.css");
-// Without `source(none)` the plugin scans `base` for classes, so `base` names no folder: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L219-L221
-const base = join(__dirname, "no-sources");
 
 export type NativewindRenderOptions = RenderOptions & {
   /** Replace the generated CSS*/
@@ -101,31 +93,14 @@ render.debug = (
   return render(component, { ...options, debug: true });
 };
 
+// @tailwindcss/postcss caches a compiler per input for watch mode and only logs a failed compile, so each render compiles with the compiler it wraps: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts
 async function compileTailwind(css: string): Promise<string> {
-  const compileErrors: unknown[] = [];
-  // The plugin logs a failed compile and hands back an empty stylesheet: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L334-L352
-  const consoleError = jest
-    .spyOn(console, "error")
-    .mockImplementation((error: unknown) => {
-      compileErrors.push(error);
-    });
+  const compiler = await compileTailwindCss(css, {
+    base: __dirname,
+    onDependency: () => undefined,
+  });
 
-  try {
-    const { css: output } = await postcss([tailwind({ base })]).process(css, {
-      from,
-    });
-
-    if (compileErrors.length > 0) {
-      throw new Error(
-        `Tailwind could not compile the render's CSS: ${String(compileErrors[0])}`,
-        { cause: compileErrors[0] },
-      );
-    }
-
-    return output;
-  } finally {
-    consoleError.mockRestore();
-  }
+  return compiler.build([]);
 }
 
 function getClassNames(
