@@ -1,4 +1,4 @@
-import { Appearance } from "react-native";
+import { Appearance, Platform } from "react-native";
 
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { View } from "react-native-css/components/View";
@@ -73,7 +73,7 @@ describe("@media on a 600x400 screen", () => {
     ["not (width > env(safe-area-inset-top))", false],
     ["(width: env(safe-area-inset-top)) or (width > 400px)", true],
     ["not ((width: env(safe-area-inset-top)) and (width > 9999px))", true],
-    ["not all and (width > 10em)", false],
+    ["not all and (width > 10vw)", false],
     ["not (fictional-feature: 3)", false],
     ["(fictional-thing) or (width > 400px)", true],
     ["(width > 400px) and (fictional-thing)", false],
@@ -93,7 +93,7 @@ describe("@media on a 600x400 screen", () => {
     ["(width)", true],
     ["(orientation)", true],
     ["(resolution)", true],
-    ["(hover)", true],
+    ["(hover)", false],
     ["(color)", true],
     ["(prefers-color-scheme)", true],
     ["(scripting)", true],
@@ -118,8 +118,6 @@ describe("@media on a 600x400 screen", () => {
   });
 
   test.each([
-    ["(hover: hover)", true],
-    ["(hover: none)", false],
     ["(min-color: 8)", true],
     ["(min-color: 9)", false],
     ["(monochrome: 0)", true],
@@ -151,15 +149,50 @@ describe("@media on a 600x400 screen", () => {
   );
 });
 
+// MQ5 §1.3: an em in a media query is the initial font size, as a rem is, so 40em is 560px at the default 14px rem
 test.each([
-  ["not (width: 10em)", false],
-  ["(width: 10em) or (width > 0px)", true],
+  ["(min-width: 40em)", true],
+  ["(min-width: 50em)", false],
+  ["(width > 40rem)", true],
+])("@media %s on a 600px screen matches: %s", (condition, expected) => {
+  expect(mediaMatches(condition)).toBe(expected);
+});
+
+test.each([
+  ["not (width: 10vw)", false],
+  ["(width: 10vw) or (width > 0px)", true],
 ])(
-  "@media %s, whose em the runtime does not resolve, matches: %s",
+  "@media %s, whose vw the runtime does not resolve, matches: %s",
   (condition, expected) => {
     expect(mediaMatches(condition)).toBe(expected);
   },
 );
+
+// MQ5 §7.2: hover is the primary input's, and a touchscreen cannot hover
+describe.each([
+  ["ios", "none"],
+  ["android", "none"],
+  ["macos", "hover"],
+  ["windows", "hover"],
+] as const)("on %s the primary input answers hover as %s", (os, hover) => {
+  let platform: jest.ReplaceProperty<typeof Platform.OS>;
+
+  beforeEach(() => {
+    platform = jest.replaceProperty(Platform, "OS", os);
+  });
+
+  afterEach(() => {
+    platform.restore();
+  });
+
+  test.each([
+    ["(hover: hover)", hover === "hover"],
+    ["(hover: none)", hover === "none"],
+    ["(hover)", hover === "hover"],
+  ])("%s matches: %s", (condition, expected) => {
+    expect(mediaMatches(condition)).toBe(expected);
+  });
+});
 
 describe("@media on a 400x600 screen", () => {
   const portrait = { width: 400, height: 600 };

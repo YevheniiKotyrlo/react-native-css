@@ -71,6 +71,11 @@ test.each<[string, Pick<StyleRule, "m" | "cq">]>([
       ],
     },
   ],
+  ["@media (min-width: 40em)", { m: [[">=", "width", 560]], cq: undefined }],
+  [
+    "@container (width > 10em)",
+    { m: undefined, cq: [{ m: [">", "width", [{}, "em", 10, 1]] }] },
+  ],
   [
     "@media (constructor: x)",
     { m: [["=", "constructor", "x"]], cq: undefined },

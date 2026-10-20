@@ -4,6 +4,8 @@ import type {
   MediaFeatureComparison as CSSMediaFeatureComparison,
   MediaFeatureValue as CSSMediaFeatureValue,
   MediaQuery as CSSMediaQuery,
+  Length,
+  LengthValue,
   QueryFeatureFor_MediaFeatureId,
 } from "lightningcss";
 
@@ -191,12 +193,36 @@ function parseMediaFeatureOperand(
   value: CSSMediaFeatureValue,
   builder: StylesheetBuilder,
 ): MediaFeatureOperand {
-  return parseMediaFeatureValue(value, builder) ?? null;
+  return (
+    parseMediaFeatureValue(value, builder, (length) =>
+      parseMediaLength(length, builder),
+    ) ?? null
+  );
+}
+
+function parseMediaLength(
+  length: Length | LengthValue,
+  builder: StylesheetBuilder,
+): StyleDescriptor {
+  if (!("unit" in length)) {
+    return length.type === "value"
+      ? parseMediaLength(length.value, builder)
+      : parseCalcFn(length.value, (inner) => parseMediaLength(inner, builder));
+  }
+
+  // An em in a media query is relative to the initial font size, as a rem is (MQ5 §1.3)
+  return parseLength(
+    length.unit === "em" ? { ...length, unit: "rem" } : length,
+    builder,
+  );
 }
 
 export function parseMediaFeatureValue(
   value: CSSMediaFeatureValue,
   builder: StylesheetBuilder,
+  parseLengthValue: (length: Length | LengthValue) => StyleDescriptor = (
+    length,
+  ) => parseLength(length, builder),
 ): StyleDescriptor {
   switch (value.type) {
     // <mq-boolean> is the integer 0 or 1 (MQ4 §5.3)
@@ -211,9 +237,9 @@ export function parseMediaFeatureValue(
     case "length":
       switch (value.value.type) {
         case "value":
-          return parseLength(value.value.value, builder);
+          return parseLengthValue(value.value.value);
         case "calc":
-          return parseCalcFn(value.value.value, builder);
+          return parseCalcFn(value.value.value, parseLengthValue);
         default:
           value.value satisfies never;
           return;
@@ -271,25 +297,29 @@ export function parseMediaFeatureOperator(
 
 function parseCalcFn(
   calc: CalcFor_Length,
-  builder: StylesheetBuilder,
+  parseLengthValue: (length: Length | LengthValue) => StyleDescriptor,
 ): StyleDescriptor {
   switch (calc.type) {
     case "number":
       return calc.value;
     case "value":
-      return parseLength(calc.value, builder);
+      return parseLengthValue(calc.value);
     case "sum":
-      return [{}, "sum", calc.value.map((c) => parseCalcFn(c, builder))];
+      return [
+        {},
+        "sum",
+        calc.value.map((c) => parseCalcFn(c, parseLengthValue)),
+      ];
     case "product":
       return [
         {},
         "product",
-        [calc.value[0], parseCalcFn(calc.value[1], builder)],
+        [calc.value[0], parseCalcFn(calc.value[1], parseLengthValue)],
       ];
     case "function":
       switch (calc.value.type) {
         case "calc":
-          return parseCalcFn(calc.value.value, builder);
+          return parseCalcFn(calc.value.value, parseLengthValue);
         case "min":
         case "max":
         case "clamp":
@@ -299,14 +329,14 @@ function parseCalcFn(
           return [
             {},
             calc.value.type,
-            calc.value.value.map((c) => parseCalcFn(c, builder)),
+            calc.value.value.map((c) => parseCalcFn(c, parseLengthValue)),
           ];
         case "abs":
         case "sign":
           return [
             {},
             calc.value.type,
-            [parseCalcFn(calc.value.value, builder)],
+            [parseCalcFn(calc.value.value, parseLengthValue)],
           ];
         case "round":
           return [
@@ -314,8 +344,8 @@ function parseCalcFn(
             calc.value.type,
             [
               calc.value.value[0],
-              parseCalcFn(calc.value.value[1], builder),
-              parseCalcFn(calc.value.value[2], builder),
+              parseCalcFn(calc.value.value[1], parseLengthValue),
+              parseCalcFn(calc.value.value[2], parseLengthValue),
             ],
           ];
         default:
