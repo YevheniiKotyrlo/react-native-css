@@ -4510,7 +4510,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tailwindcss/node@npm:4.1.13":
+"@tailwindcss/node@npm:4.1.13, @tailwindcss/node@npm:^4.1.12":
   version: 4.1.13
   resolution: "@tailwindcss/node@npm:4.1.13"
   dependencies:
@@ -12212,6 +12212,7 @@ __metadata:
     "@react-native/jest-preset": "npm:0.86.3"
     "@react-native/metro-config": "npm:0.86.3"
     "@release-it/conventional-changelog": "npm:10.0.1"
+    "@tailwindcss/node": "npm:^4.1.12"
     "@tailwindcss/postcss": "npm:^4.1.12"
     "@testing-library/react-native": "npm:^13.3.3"
     "@tsconfig/react-native": "npm:^3.0.6"
