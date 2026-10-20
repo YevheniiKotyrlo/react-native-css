@@ -21,3 +21,9 @@ test("renders that read the same millisecond compile and apply their own classes
     now.mockRestore();
   }
 });
+
+test("a render whose CSS fails to compile rejects", async () => {
+  await expect(
+    render(<View className="left-0" />, { css: '@import "./missing.css";' }),
+  ).rejects.toThrow("Can't resolve './missing.css'");
+});

@@ -1,5 +1,7 @@
 import type { PropsWithChildren, ReactElement } from "react";
 
+import { join } from "node:path";
+
 import tailwind from "@tailwindcss/postcss";
 import {
   screen,
@@ -13,23 +15,22 @@ import { registerCSS } from "react-native-css/jest";
 
 const testID = "tailwind";
 
-let renderCount = 0;
+// The plugin reuses a cached compiler until a file it read changes, and compiles afresh whenever no file is at `from`, so `from` names none: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L182-L196
+const from = join(__dirname, "input.css");
+// Without `source(none)` the plugin scans `base` for classes, so `base` names no folder: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L219-L221
+const base = join(__dirname, "no-sources");
 
 export type NativewindRenderOptions = RenderOptions & {
   /** Replace the generated CSS*/
   css?: string;
   /** Appended after the generated CSS */
   extraCss?: string;
-  /** Specify the className to use for the component @default sourceInline */
-  className?: string;
   /** Add `@source inline('<className>')` to the CSS. @default Values are extracted from the component's className */
   sourceInline?: string[];
   /** Whether to include the theme in the generated CSS @default true */
   theme?: boolean;
   /** Whether to include the preflight in the generated CSS @default false */
   preflight?: boolean;
-  /** Whether to include the plugin in the generated CSS. @default true */
-  plugin?: boolean;
   /** Enable debug logging. @default false - Set process.env.NATIVEWIND_TEST_AUTO_DEBUG and run tests with the node inspector   */
   debug?: boolean | "verbose";
 };
@@ -76,13 +77,7 @@ export async function render(
     console.log(`Input CSS:\n---\n${css}\n---\n`);
   }
 
-  // Process the TailwindCSS
-  const { css: output } = await postcss([
-    /* The plugin reuses one compiler per `from` and `base`, so every render needs a `base` no other render has */
-    tailwind({ base: `render-${++renderCount}` }),
-  ]).process(css, {
-    from: __dirname,
-  });
+  const output = await compileTailwind(css);
 
   if (debug) {
     console.log(`Output CSS:\n---\n${output}\n---\n`);
@@ -101,10 +96,37 @@ export async function render(
 
 render.debug = (
   component: ReactElement<PropsWithChildren>,
-  options: RenderOptions = {},
+  options: NativewindRenderOptions = {},
 ) => {
   return render(component, { ...options, debug: true });
 };
+
+async function compileTailwind(css: string): Promise<string> {
+  const compileErrors: unknown[] = [];
+  // The plugin logs a failed compile and hands back an empty stylesheet: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L334-L352
+  const consoleError = jest
+    .spyOn(console, "error")
+    .mockImplementation((error: unknown) => {
+      compileErrors.push(error);
+    });
+
+  try {
+    const { css: output } = await postcss([tailwind({ base })]).process(css, {
+      from,
+    });
+
+    if (compileErrors.length > 0) {
+      throw new Error(
+        `Tailwind could not compile the render's CSS: ${String(compileErrors[0])}`,
+        { cause: compileErrors[0] },
+      );
+    }
+
+    return output;
+  } finally {
+    consoleError.mockRestore();
+  }
+}
 
 function getClassNames(
   component: ReactElement<PropsWithChildren>,
@@ -174,6 +196,11 @@ renderSimple.debug = (
   return renderSimple({ ...options, debug: true });
 };
 
+type CurrentTestRenderOptions = NativewindRenderOptions & {
+  /** Specify the className to use for the component @default sourceInline */
+  className?: string;
+};
+
 /**
  * Helper method that uses the current test name to render the component
  * Doesn't not support multiple components or changing the component type
@@ -182,7 +209,7 @@ export async function renderCurrentTest({
   sourceInline = [expect.getState().currentTestName?.split(/\s+/).at(-1) ?? ""],
   className = sourceInline.join(" "),
   ...options
-}: NativewindRenderOptions = {}) {
+}: CurrentTestRenderOptions = {}) {
   return renderSimple({
     ...options,
     sourceInline,
@@ -190,6 +217,6 @@ export async function renderCurrentTest({
   });
 }
 
-renderCurrentTest.debug = (options: NativewindRenderOptions = {}) => {
+renderCurrentTest.debug = (options: CurrentTestRenderOptions = {}) => {
   return renderCurrentTest({ ...options, debug: true });
 };
