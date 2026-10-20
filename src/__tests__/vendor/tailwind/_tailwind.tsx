@@ -1,12 +1,11 @@
 import type { PropsWithChildren, ReactElement } from "react";
 
-import tailwind from "@tailwindcss/postcss";
+import { compile as compileTailwindCss } from "@tailwindcss/node";
 import {
   screen,
   render as tlRender,
   type RenderOptions,
 } from "@testing-library/react-native";
-import postcss from "postcss";
 import type { compile } from "react-native-css/compiler";
 import { View } from "react-native-css/components";
 import { registerCSS } from "react-native-css/jest";
@@ -18,16 +17,12 @@ export type NativewindRenderOptions = RenderOptions & {
   css?: string;
   /** Appended after the generated CSS */
   extraCss?: string;
-  /** Specify the className to use for the component @default sourceInline */
-  className?: string;
   /** Add `@source inline('<className>')` to the CSS. @default Values are extracted from the component's className */
   sourceInline?: string[];
   /** Whether to include the theme in the generated CSS @default true */
   theme?: boolean;
   /** Whether to include the preflight in the generated CSS @default false */
   preflight?: boolean;
-  /** Whether to include the plugin in the generated CSS. @default true */
-  plugin?: boolean;
   /** Enable debug logging. @default false - Set process.env.NATIVEWIND_TEST_AUTO_DEBUG and run tests with the node inspector   */
   debug?: boolean | "verbose";
 };
@@ -74,13 +69,7 @@ export async function render(
     console.log(`Input CSS:\n---\n${css}\n---\n`);
   }
 
-  // Process the TailwindCSS
-  const { css: output } = await postcss([
-    /* Tailwind seems to internally cache things, so we need a random value to cache bust */
-    tailwind({ base: Date.now().toString() }),
-  ]).process(css, {
-    from: __dirname,
-  });
+  const output = await compileTailwind(css);
 
   if (debug) {
     console.log(`Output CSS:\n---\n${output}\n---\n`);
@@ -99,10 +88,20 @@ export async function render(
 
 render.debug = (
   component: ReactElement<PropsWithChildren>,
-  options: RenderOptions = {},
+  options: NativewindRenderOptions = {},
 ) => {
   return render(component, { ...options, debug: true });
 };
+
+// @tailwindcss/postcss caches a compiler per input for watch mode and only logs a failed compile, so each render compiles with the compiler it wraps: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts
+async function compileTailwind(css: string): Promise<string> {
+  const compiler = await compileTailwindCss(css, {
+    base: __dirname,
+    onDependency: () => undefined,
+  });
+
+  return compiler.build([]);
+}
 
 function getClassNames(
   component: ReactElement<PropsWithChildren>,
@@ -172,6 +171,11 @@ renderSimple.debug = (
   return renderSimple({ ...options, debug: true });
 };
 
+type CurrentTestRenderOptions = NativewindRenderOptions & {
+  /** Specify the className to use for the component @default sourceInline */
+  className?: string;
+};
+
 /**
  * Helper method that uses the current test name to render the component
  * Doesn't not support multiple components or changing the component type
@@ -180,7 +184,7 @@ export async function renderCurrentTest({
   sourceInline = [expect.getState().currentTestName?.split(/\s+/).at(-1) ?? ""],
   className = sourceInline.join(" "),
   ...options
-}: NativewindRenderOptions = {}) {
+}: CurrentTestRenderOptions = {}) {
   return renderSimple({
     ...options,
     sourceInline,
@@ -188,6 +192,6 @@ export async function renderCurrentTest({
   });
 }
 
-renderCurrentTest.debug = (options: NativewindRenderOptions = {}) => {
+renderCurrentTest.debug = (options: CurrentTestRenderOptions = {}) => {
   return renderCurrentTest({ ...options, debug: true });
 };
