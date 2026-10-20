@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { createContext } from "react";
 import {
+  AccessibilityInfo,
   Appearance,
   Dimensions,
   type ColorSchemeName,
@@ -8,6 +9,8 @@ import {
 } from "react-native";
 
 import type { StyleDescriptor } from "react-native-css/compiler";
+
+import type { ReducedMotionPreference } from "../runtime.types";
 
 export type Effect = {
   observers: Set<Observable<any, any>>;
@@ -251,6 +254,44 @@ export const colorScheme = observable<ColorSchemeName | null | undefined>(
   Appearance.getColorScheme(),
 );
 Appearance.addChangeListener((event) => colorScheme.set(event.colorScheme));
+
+/** Reduced Motion ************************************************************/
+
+// AccessibilityInfo answers asynchronously; until it does the device's preference is unknown, so a query on it does not match and a negated one does
+export const deviceReducedMotion = observable<
+  ReducedMotionPreference | undefined
+>(undefined);
+
+// A script's override stands over the device's preference until the device's setting changes, as colorScheme's does
+export const reducedMotion = observable<
+  ReducedMotionPreference | undefined,
+  ReducedMotionPreference | undefined
+>((read, override) => override ?? read(deviceReducedMotion));
+
+function followDeviceReducedMotion(isReduceMotionEnabled: boolean) {
+  deviceReducedMotion.set(isReduceMotionEnabled ? "reduce" : "no-preference");
+  reducedMotion.set(undefined);
+}
+
+function seedDeviceReducedMotion(isReduceMotionEnabled: boolean) {
+  // A change event that arrived first is newer than what the getter read
+  if (deviceReducedMotion.get() === undefined) {
+    deviceReducedMotion.set(isReduceMotionEnabled ? "reduce" : "no-preference");
+  }
+}
+
+async function readDeviceReducedMotion(): Promise<boolean> {
+  AccessibilityInfo.addEventListener(
+    "reduceMotionChanged",
+    followDeviceReducedMotion,
+  );
+  return await AccessibilityInfo.isReduceMotionEnabled();
+}
+
+// React Native rejects where the platform has no accessibility module, and a test double may lack either call: either way the user has stated no preference to it
+readDeviceReducedMotion().then(seedDeviceReducedMotion, () => {
+  seedDeviceReducedMotion(false);
+});
 
 /** Containers ****************************************************************/
 
