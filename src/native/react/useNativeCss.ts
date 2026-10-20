@@ -8,7 +8,7 @@ import {
   useState,
   type ComponentType,
 } from "react";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { Image, Pressable, View } from "react-native";
 
 import { VariableContext } from "react-native-css/native-internal";
 
@@ -18,6 +18,7 @@ import {
   cleanupEffect,
   ContainerContext,
   hasChangedDependencies,
+  weakFamily,
   type ContainerContextValue,
   type Effect,
   type Getter,
@@ -254,13 +255,16 @@ export function mappingToConfig(mapping: StyledConfiguration<any>) {
   });
 }
 
-// Apply native Image fitting before normal, inline, and important props merge.
+// Apply native Image fitting once per computed props object, before normal, inline, and important props merge.
 // The compiler's contentFit mapping remains available to Expo Image adapters.
-function adaptImageProps(props: Record<string, any> | undefined) {
-  if (!props || !("contentFit" in props)) return props;
-  const { contentFit, style, ...rest } = props;
-  return {
-    ...rest,
-    style: { ...StyleSheet.flatten(style), objectFit: contentFit },
-  };
-}
+const adaptImageProps = weakFamily(
+  (props: Readonly<Record<string, unknown>>) => {
+    if (!("contentFit" in props)) return props;
+    const { contentFit, style, ...rest } = props;
+    // The computed style is a plain object, so it needs no flattening
+    return {
+      ...rest,
+      style: Object.assign({}, style, { objectFit: contentFit }),
+    };
+  },
+);
