@@ -73,7 +73,9 @@ export interface StyleRule {
   dv?: number;
 
   // Target override
-  target?: string | string[] | false;
+  target?: string | string[];
+  // The props a declaration names land under the target too, as a target:false config collects them
+  propsUnderTarget?: true;
 
   /**
    * Conditionals
