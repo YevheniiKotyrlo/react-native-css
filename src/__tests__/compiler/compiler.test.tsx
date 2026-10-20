@@ -232,6 +232,33 @@ test("light-dark()", () => {
   });
 });
 
+test.each([
+  [
+    "(prefers-reduced-motion: reduce)",
+    ["=", "prefers-reduced-motion", "reduce"],
+  ],
+  [
+    "(prefers-reduced-motion: no-preference)",
+    ["=", "prefers-reduced-motion", "no-preference"],
+  ],
+  ["(prefers-reduced-motion)", ["!!", "prefers-reduced-motion"]],
+  [
+    "(prefers-reduced-motion: REDUCE)",
+    ["=", "prefers-reduced-motion", "reduce"],
+  ],
+  ["(prefers-color-scheme: DARK)", ["=", "prefers-color-scheme", "dark"]],
+  ["IOS", ["=", "platform", "ios"]],
+  ["(grid: 1)", ["=", "grid", true]],
+  ["(color: 8)", ["=", "color", 8]],
+  ["(-webkit-device-pixel-ratio: 2)", ["=", "-webkit-device-pixel-ratio", 2]],
+])("@media %s compiles to its condition", (query, condition) => {
+  expect(
+    compile(`@media ${query} { .my-class { opacity: 0 } }`).stylesheet(),
+  ).toStrictEqual({
+    s: [["my-class", [{ s: [2, 1], m: [condition], d: [{ opacity: 0 }] }]]],
+  });
+});
+
 test("media query nested in rules", () => {
   const compiled = compile(`
 .my-class {
@@ -307,6 +334,27 @@ test("container queries", () => {
             d: [{ color: "#00f" }],
             s: [2, 1],
             v: [["__rn-css-color", "#00f"]],
+          },
+        ],
+      ],
+    ],
+  });
+});
+
+test("a container query keyword compiles in lowercase", () => {
+  expect(
+    compile(
+      `@container (orientation: LANDSCAPE) { .child { opacity: 0 } }`,
+    ).stylesheet(),
+  ).toStrictEqual({
+    s: [
+      [
+        "child",
+        [
+          {
+            cq: [{ m: ["=", "orientation", "landscape"] }],
+            d: [{ opacity: 0 }],
+            s: [2, 1],
           },
         ],
       ],
