@@ -5,7 +5,13 @@ import type {
   MediaFeatureComparison,
 } from "react-native-css/compiler";
 
-import { colorScheme, vh, vw, type Getter } from "../reactivity";
+import {
+  colorScheme,
+  hoverCapableInput,
+  vh,
+  vw,
+  type Getter,
+} from "../reactivity";
 import {
   compareMediaFeature,
   isTruthyFeatureValue,
@@ -94,11 +100,13 @@ function getMediaFeatureValue(
   get: Getter,
 ): MeasuredFeatureValue {
   switch (name) {
-    // A touchscreen is the primary input on iOS and Android, and it cannot hover (MQ5 §7.2)
+    // A touchscreen, the input of iOS and Android until a pointer hovers, cannot hover (MQ5 §7.2)
     case "hover":
-      return Platform.OS === "ios" || Platform.OS === "android"
-        ? "none"
-        : "hover";
+    case "any-hover":
+      return get(hoverCapableInput) ||
+        (Platform.OS !== "ios" && Platform.OS !== "android")
+        ? "hover"
+        : "none";
     case "display-mode":
       return Platform.OS;
     // A device with no preference matches light (MQ5 §12.5.1)

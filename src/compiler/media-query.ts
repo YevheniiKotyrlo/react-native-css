@@ -139,6 +139,7 @@ function parseMediaQueryCondition(
 // The keywords Media Queries 4 and 5 give each discrete feature the runtime answers; any other keyword leaves the feature unknown (MQ5 §3.1)
 const FEATURE_KEYWORDS: ReadonlyMap<string, readonly string[]> = new Map([
   ["hover", ["none", "hover"]],
+  ["any-hover", ["none", "hover"]],
   ["orientation", ["portrait", "landscape"]],
   ["prefers-color-scheme", ["light", "dark"]],
   ["prefers-reduced-motion", ["no-preference", "reduce"]],

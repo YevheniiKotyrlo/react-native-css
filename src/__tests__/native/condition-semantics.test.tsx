@@ -194,6 +194,35 @@ describe.each([
   });
 });
 
+describe("on iOS, once a pointer hovers an element", () => {
+  test.each([
+    ["(hover: hover)", true],
+    ["(hover: none)", false],
+    ["(any-hover: hover)", true],
+    ["(any-hover: none)", false],
+  ])("%s matches: %s", (condition, expected) => {
+    registerCSS(`
+      .target:hover { opacity: 0.5; }
+      .child { width: 10px; }
+      @media ${condition} { .child { width: 37px; } }
+    `);
+    render(
+      <>
+        <View testID="target" className="target" />
+        <View testID="child" className="child" />
+      </>,
+    );
+    const widthBefore = screen.getByTestId("child").props.style.width;
+
+    fireEvent(screen.getByTestId("target"), "hoverIn");
+
+    expect({
+      before: widthBefore === 37,
+      after: screen.getByTestId("child").props.style.width === 37,
+    }).toStrictEqual({ before: !expected, after: expected });
+  });
+});
+
 describe("@media on a 400x600 screen", () => {
   const portrait = { width: 400, height: 600 };
 
