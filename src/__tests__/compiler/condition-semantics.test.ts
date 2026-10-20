@@ -19,23 +19,61 @@ test.each([
   ).toStrictEqual([]);
 });
 
+// An unknown keeps an `and` or a `not` unknown (MQ5 §3.2), so a condition no device can make true compiles to no rule
+test.each([
+  "@container style(--foo: bar)",
+  "@container not style(--foo: bar)",
+  "@container style(--foo: bar) and (width > 400px)",
+  "@media (width > env(safe-area-inset-top))",
+  "@media not (width: env(safe-area-inset-top))",
+  "@media (orientation: bogus)",
+  "@media not (orientation: bogus)",
+])("%s, which no device can make true, emits no block", (prelude) => {
+  expect(
+    compileChildConditions(`${prelude} { .child { color: red } }`),
+  ).toStrictEqual([]);
+});
+
 test.each<[string, Pick<StyleRule, "m" | "cq">]>([
-  ["@container style(--foo: bar)", { m: undefined, cq: [{ m: ["?"] }] }],
-  [
-    "@container not style(--foo: bar)",
-    { m: undefined, cq: [{ m: ["!", ["?"]] }] },
-  ],
   [
     "@container style(--foo: bar) or (width > 400px)",
     { m: undefined, cq: [{ m: ["|", [["?"], [">", "width", 400]]] }] },
   ],
   [
-    "@media (width > env(safe-area-inset-top))",
-    { m: [[">", "width", null]], cq: undefined },
+    "@media (width > env(safe-area-inset-top)) or (width > 400px)",
+    {
+      m: [
+        [
+          "|",
+          [
+            [">", "width", null],
+            [">", "width", 400],
+          ],
+        ],
+      ],
+      cq: undefined,
+    },
   ],
   [
-    "@media not (width: env(safe-area-inset-top))",
-    { m: [["!", ["=", "width", null]]], cq: undefined },
+    "@container (aspect-ratio > 16/9) or (width > 10in)",
+    {
+      m: undefined,
+      cq: [
+        {
+          m: [
+            "|",
+            [
+              [">", "aspect-ratio", 16 / 9],
+              [">", "width", null],
+            ],
+          ],
+        },
+      ],
+    },
+  ],
+  [
+    "@media (constructor: x)",
+    { m: [["=", "constructor", "x"]], cq: undefined },
   ],
   ["@media (grid: 0)", { m: [["=", "grid", 0]], cq: undefined }],
   ["@media (grid: 1)", { m: [["=", "grid", 1]], cq: undefined }],
@@ -45,13 +83,10 @@ test.each<[string, Pick<StyleRule, "m" | "cq">]>([
   ).toStrictEqual([conditions]);
 });
 
-test("a media query list keeps a branch whose value the compiler cannot resolve", () => {
+test("a media query list keeps the branch a device can match beside one none can", () => {
   expect(
     compileChildConditions(
       "@media (width > env(safe-area-inset-top)), (width > 400px) { .child { color: red } }",
     ),
-  ).toStrictEqual([
-    { m: [[">", "width", null]], cq: undefined },
-    { m: [[">", "width", 400]], cq: undefined },
-  ]);
+  ).toStrictEqual([{ m: [[">", "width", 400]], cq: undefined }]);
 });

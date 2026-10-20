@@ -1,8 +1,9 @@
-/* eslint-disable */
-import type { MediaFeatureNameFor_ContainerSizeFeatureId } from "lightningcss";
+import { I18nManager } from "react-native";
+
 import type {
   ContainerQuery,
   MediaCondition,
+  MediaFeatureComparison,
   PseudoClassesQuery,
 } from "react-native-css/compiler";
 
@@ -32,6 +33,11 @@ import {
   type Truth,
 } from "./kleene";
 
+type ContainerFeatureName = Extract<
+  MediaCondition,
+  [MediaFeatureComparison, ...unknown[]]
+>[1];
+
 export const DEFAULT_CONTAINER_NAME = "c:___default___";
 
 export function testContainerQueries(
@@ -52,7 +58,7 @@ export function testContainerQuery(
   get: Getter,
 ): boolean {
   const name = query.n ?? DEFAULT_CONTAINER_NAME;
-  const container = inheritedContainers[name]!;
+  const container = inheritedContainers[name];
 
   guards.push(["c", name, container]);
 
@@ -143,27 +149,32 @@ function testContainerMediaCondition(
 }
 
 function getContainerFeatureValue(
-  name: MediaFeatureNameFor_ContainerSizeFeatureId,
+  name: ContainerFeatureName,
   containerKey: WeakKey,
   get: Getter,
 ): MeasuredFeatureValue {
   switch (name) {
+    // React Native lays out horizontal-tb, so the inline axis is the width and the block axis the height
     case "width":
+    case "inline-size":
       return get(containerWidthFamily(containerKey));
     case "height":
+    case "block-size":
       return get(containerHeightFamily(containerKey));
     case "aspect-ratio": {
       const width = get(containerWidthFamily(containerKey));
       const height = get(containerHeightFamily(containerKey));
       return width / height;
     }
-    case "orientation":
+    case "orientation": {
       const width = get(containerWidthFamily(containerKey));
       const height = get(containerHeightFamily(containerKey));
       return width > height ? "landscape" : "portrait";
-    case "inline-size":
-    case "block-size":
+    }
+    // An ancestor's [dir] selector compiles to this library's dir condition, which the media evaluator answers the same way
+    case "dir":
+      return I18nManager.isRTL ? "rtl" : "ltr";
     default:
-      return;
+      return undefined;
   }
 }

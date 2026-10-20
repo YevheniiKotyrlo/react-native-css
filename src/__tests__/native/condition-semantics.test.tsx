@@ -1,3 +1,5 @@
+import { Appearance } from "react-native";
+
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { View } from "react-native-css/components/View";
 import { registerCSS } from "react-native-css/jest";
@@ -149,6 +151,16 @@ describe("@media on a 600x400 screen", () => {
   );
 });
 
+test.each([
+  ["not (width: 10em)", false],
+  ["(width: 10em) or (width > 0px)", true],
+])(
+  "@media %s, whose em the runtime does not resolve, matches: %s",
+  (condition, expected) => {
+    expect(mediaMatches(condition)).toBe(expected);
+  },
+);
+
 describe("@media on a 400x600 screen", () => {
   const portrait = { width: 400, height: 600 };
 
@@ -217,6 +229,58 @@ describe("@container on a 400x200 container", () => {
   test("(width) does not match a container of zero width", () => {
     expect(containerMatches("(width)", { width: 0, height: 200 })).toBe(false);
   });
+
+  // A ratio compares as its quotient, and a length the runtime cannot resolve leaves its term unknown
+  test.each([
+    ["(aspect-ratio > 16/9)", true],
+    ["(aspect-ratio > 3/1)", false],
+    ["(width > 10in) or (width > 100px)", true],
+    ["not (width > 10in)", false],
+  ])("%s matches: %s", (condition, expected) => {
+    expect(containerMatches(condition)).toBe(expected);
+  });
+
+  // React Native lays out horizontal-tb, so the inline axis is the width and the block axis the height
+  test.each([
+    ["(inline-size > 300px)", true],
+    ["(block-size > 300px)", false],
+    ["not (inline-size > 300px)", false],
+  ])("%s matches: %s", (condition, expected) => {
+    expect(containerMatches(condition)).toBe(expected);
+  });
+});
+
+test("an ancestor's [dir] answers as the layout direction", () => {
+  registerCSS(`
+    .child { width: 10px; }
+    .parent[dir="ltr"] .child { width: 37px; }
+  `);
+  render(
+    <View testID="parent" className="parent">
+      <View testID="child" className="child" />
+    </View>,
+  );
+
+  expect(screen.getByTestId("child").props.style.width).toBe(37);
+});
+
+test("a scheme set back to unspecified follows the system's, as colorScheme.get() does", () => {
+  const getColorScheme = jest
+    .spyOn(Appearance, "getColorScheme")
+    .mockReturnValue("dark");
+
+  try {
+    act(() => {
+      colorScheme.set("light");
+      colorScheme.set("unspecified");
+    });
+
+    expect(colorScheme.get()).toBe("dark");
+    expect(mediaMatches("(prefers-color-scheme: dark)")).toBe(true);
+    expect(mediaMatches("(prefers-color-scheme: light)")).toBe(false);
+  } finally {
+    getColorScheme.mockRestore();
+  }
 });
 
 test("a decided conjunction reads only the term that decided it", () => {
