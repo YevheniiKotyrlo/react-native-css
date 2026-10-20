@@ -1,10 +1,14 @@
-import { Appearance, Platform } from "react-native";
+import { Appearance, I18nManager, Platform } from "react-native";
 
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { View } from "react-native-css/components/View";
 import { registerCSS } from "react-native-css/jest";
 import { colorScheme } from "react-native-css/runtime";
 
+import {
+  DEFAULT_CONTAINER_NAME,
+  testContainerQuery,
+} from "../../native/conditions/container-query";
 import { testMediaQuery } from "../../native/conditions/media-query";
 import { dimensions, vw, type Getter } from "../../native/reactivity";
 
@@ -317,19 +321,35 @@ describe("@container on a 400x200 container", () => {
   });
 });
 
-test("an ancestor's [dir] answers as the layout direction", () => {
-  registerCSS(`
-    .child { width: 10px; }
-    .parent[dir="ltr"] .child { width: 37px; }
-  `);
-  render(
-    <View testID="parent" className="parent">
-      <View testID="child" className="child" />
-    </View>,
-  );
+test.each([
+  [false, "ltr", true],
+  [false, "rtl", false],
+  [true, "rtl", true],
+  [true, "ltr", false],
+] as const)(
+  "with isRTL %p, an ancestor's [dir=%s] applies: %p",
+  (isRTL, direction, expected) => {
+    const layoutDirection = jest.replaceProperty(I18nManager, "isRTL", isRTL);
 
-  expect(screen.getByTestId("child").props.style.width).toBe(37);
-});
+    try {
+      registerCSS(`
+        .child { width: 10px; }
+        .parent[dir="${direction}"] .child { width: 37px; }
+      `);
+      render(
+        <View testID="parent" className="parent">
+          <View testID="child" className="child" />
+        </View>,
+      );
+
+      expect(screen.getByTestId("child").props.style.width === 37).toBe(
+        expected,
+      );
+    } finally {
+      layoutDirection.restore();
+    }
+  },
+);
 
 test("a scheme set back to unspecified follows the system's, as colorScheme.get() does", () => {
   const getColorScheme = jest
@@ -375,6 +395,28 @@ test("a decided conjunction reads only the term that decided it", () => {
     ),
   ).toBe(false);
   expect(read).toStrictEqual([vw]);
+});
+
+test("a container feature the runtime does not measure applies nowhere, negated or not", () => {
+  const get: Getter = (observable) => observable.get();
+  const containers = { [DEFAULT_CONTAINER_NAME]: { key: {}, props: {} } };
+
+  expect(
+    testContainerQuery(
+      { m: [">", "fictional-feature", 10] },
+      containers,
+      [],
+      get,
+    ),
+  ).toBe(false);
+  expect(
+    testContainerQuery(
+      { m: ["!", [">", "fictional-feature", 10]] },
+      containers,
+      [],
+      get,
+    ),
+  ).toBe(false);
 });
 
 test("an unknown term applies nowhere, negated or not", () => {

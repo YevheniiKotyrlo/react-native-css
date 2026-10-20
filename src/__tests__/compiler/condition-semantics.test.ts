@@ -28,8 +28,13 @@ test.each([
   "@media not (width: env(safe-area-inset-top))",
   "@media (orientation: bogus)",
   "@media not (orientation: bogus)",
+  "@media not ((width > 100px) or (orientation: bogus))",
+  "@media not (env(safe-area-inset-top) < width < env(safe-area-inset-bottom))",
+  "@media (min-aspect-ratio: 0/1)",
   "@media (min-width: calc(10em + 1vw))",
   "@media (min-width: calc(10em + 1in))",
+  "@media (min-width: abs(10em - 1vw))",
+  "@media (min-width: min(10em, 1vw))",
   "@container (width > calc(10em + 1px))",
 ])("%s, which no device can make true, emits no block", (prelude) => {
   expect(
@@ -76,6 +81,14 @@ test.each<[string, Pick<StyleRule, "m" | "cq">]>([
   ],
   ["@media (min-width: 40em)", { m: [[">=", "width", 560]], cq: undefined }],
   [
+    "@media not (400px < width < 800px)",
+    { m: [["!", ["[]", "width", 400, "<", 800, "<"]]], cq: undefined },
+  ],
+  [
+    "@media not (env(safe-area-inset-top) < width < 800px)",
+    { m: [["!", ["[]", "width", null, "<", 800, "<"]]], cq: undefined },
+  ],
+  [
     "@media (400px < width < calc(40em + 1px))",
     { m: [["[]", "width", 400, "<", 561, "<"]], cq: undefined },
   ],
@@ -109,6 +122,7 @@ test.each([
   ["round(10em, 15px)", 135],
   ["round(up, 10em, 15px)", 150],
   ["round(down, 10em, 15px)", 135],
+  ["round(to-zero, 10em, 15px)", 135],
   ["round(to-zero, -10em, 15px)", -135],
   ["round(10em, 0px)", 0],
   ["rem(-40em, 15px)", -5],
