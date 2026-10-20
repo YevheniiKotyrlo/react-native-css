@@ -81,7 +81,7 @@ interface StyledConfigurationObject<
     | (T extends false
         ? NativeStyleMapping<string, ComponentProps<C>>
         : NativeStyleMapping<
-            ResolveDotPath<T, ComponentProps<C>>,
+            ResolveDotPath<ComponentProps<C>, Extract<T, string>>,
             ComponentProps<C>
           >)
     | undefined;

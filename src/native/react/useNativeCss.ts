@@ -210,7 +210,11 @@ export function mappingToConfig(mapping: StyledConfiguration<any>) {
       const mapping = value.nativeStyleMapping ?? value.nativeStyleToProp;
       const nativeStyleMapping = mapping
         ? Object.fromEntries(
-            Object.entries(mapping).map(([k, v]) => [k, v === true ? k : v]),
+            Object.entries(mapping).flatMap(([property, path]) =>
+              path === undefined
+                ? []
+                : [[property, path === true ? property : path] as const],
+            ),
           )
         : undefined;
 
