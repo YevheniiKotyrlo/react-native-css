@@ -72,7 +72,12 @@ export const colorScheme: ColorScheme = {
     return colorSchemeObs.get() ?? Appearance.getColorScheme() ?? "light";
   },
   set(value) {
-    return colorSchemeObs.set(value === "unspecified" ? null : value);
+    // "unspecified" follows the system's scheme, so the media evaluator reads the scheme this getter returns
+    colorSchemeObs.set(
+      value === "unspecified" || value === null || value === undefined
+        ? Appearance.getColorScheme()
+        : value,
+    );
   },
 };
 
