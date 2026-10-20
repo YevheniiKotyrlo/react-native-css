@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { createContext } from "react";
 import {
+  AccessibilityInfo,
   Appearance,
   Dimensions,
   type ColorSchemeName,
@@ -251,6 +252,35 @@ export const colorScheme = observable<ColorSchemeName | null | undefined>(
   Appearance.getColorScheme(),
 );
 Appearance.addChangeListener((event) => colorScheme.set(event.colorScheme));
+
+/** Reduced Motion ************************************************************/
+
+export type ReducedMotionPreference = "no-preference" | "reduce";
+
+// AccessibilityInfo answers asynchronously, and until it does the preference is unknown and matches no query
+export const reducedMotion = observable<ReducedMotionPreference | undefined>(
+  undefined,
+);
+
+function setReducedMotion(isReduceMotionEnabled: boolean) {
+  reducedMotion.set(isReduceMotionEnabled ? "reduce" : "no-preference");
+}
+
+AccessibilityInfo.addEventListener("reduceMotionChanged", setReducedMotion);
+AccessibilityInfo.isReduceMotionEnabled().then(
+  (isReduceMotionEnabled) => {
+    // A change event that arrived first is newer than what the getter read
+    if (reducedMotion.get() === undefined) {
+      setReducedMotion(isReduceMotionEnabled);
+    }
+  },
+  // React Native rejects where the platform has no accessibility module, so the user has stated no preference to it
+  () => {
+    if (reducedMotion.get() === undefined) {
+      reducedMotion.set("no-preference");
+    }
+  },
+);
 
 /** Containers ****************************************************************/
 
