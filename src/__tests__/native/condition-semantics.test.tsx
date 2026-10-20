@@ -154,6 +154,9 @@ test.each([
   ["(min-width: 40em)", true],
   ["(min-width: 50em)", false],
   ["(width > 40rem)", true],
+  ["(min-width: calc(40em + 40px))", true],
+  ["(min-width: calc(40em + 41px))", false],
+  ["not (min-width: calc(40em + 41px))", true],
 ])("@media %s on a 600px screen matches: %s", (condition, expected) => {
   expect(mediaMatches(condition)).toBe(expected);
 });
@@ -161,6 +164,8 @@ test.each([
 test.each([
   ["not (width: 10vw)", false],
   ["(width: 10vw) or (width > 0px)", true],
+  ["not (min-width: calc(10em + 1vw))", false],
+  ["(min-width: calc(10em + 1vw)) or (width > 0px)", true],
 ])(
   "@media %s, whose vw the runtime does not resolve, matches: %s",
   (condition, expected) => {

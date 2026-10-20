@@ -6,7 +6,9 @@ import type {
   MediaQuery as CSSMediaQuery,
   Length,
   LengthValue,
+  MathFunctionFor_Length,
   QueryFeatureFor_MediaFeatureId,
+  RoundingStrategy,
 } from "lightningcss";
 
 import { asciiLowerCase } from "../utilities/ascii-case";
@@ -208,7 +210,9 @@ function parseMediaLength(
   if (!("unit" in length)) {
     return length.type === "value"
       ? parseMediaLength(length.value, builder)
-      : parseCalcFn(length.value, (inner) => parseMediaLength(inner, builder));
+      : parseMathLength(length.value, (inner) =>
+          parseMediaLength(inner, builder),
+        );
   }
 
   // An em in a media query is relative to the initial font size, as a rem is (MQ5 §1.3)
@@ -240,7 +244,7 @@ export function parseMediaFeatureValue(
         case "value":
           return parseLengthValue(value.value.value);
         case "calc":
-          return parseCalcFn(value.value.value, parseLengthValue);
+          return parseMathLength(value.value.value, parseLengthValue);
         default:
           value.value satisfies never;
           return;
@@ -296,66 +300,154 @@ export function parseMediaFeatureOperator(
   }
 }
 
-function parseCalcFn(
+// A math function folds to its value when every length in it resolves at compile time, a NaN result counting as 0 (css-values-4 §10.9)
+function parseMathLength(
   calc: CalcFor_Length,
   parseLengthValue: (length: Length | LengthValue) => StyleDescriptor,
 ): StyleDescriptor {
+  const value = evaluateCalc(calc, parseLengthValue);
+  return value === undefined
+    ? undefined
+    : parseLengthValue({ unit: "px", value: Number.isNaN(value) ? 0 : value });
+}
+
+function evaluateCalc(
+  calc: CalcFor_Length,
+  parseLengthValue: (length: Length | LengthValue) => StyleDescriptor,
+): number | undefined {
+  const evaluate = (node: CalcFor_Length) =>
+    evaluateCalc(node, parseLengthValue);
+
   switch (calc.type) {
+    case "value": {
+      const length = parseLengthValue(calc.value);
+      return typeof length === "number" ? length : undefined;
+    }
     case "number":
       return calc.value;
-    case "value":
-      return parseLengthValue(calc.value);
     case "sum":
-      return [
-        {},
-        "sum",
-        calc.value.map((c) => parseCalcFn(c, parseLengthValue)),
-      ];
+      return foldPair(
+        evaluate(calc.value[0]),
+        evaluate(calc.value[1]),
+        (left, right) => left + right,
+      );
     case "product":
-      return [
-        {},
-        "product",
-        [calc.value[0], parseCalcFn(calc.value[1], parseLengthValue)],
-      ];
+      return foldPair(
+        calc.value[0],
+        evaluate(calc.value[1]),
+        (factor, value) => factor * value,
+      );
     case "function":
-      switch (calc.value.type) {
-        case "calc":
-          return parseCalcFn(calc.value.value, parseLengthValue);
-        case "min":
-        case "max":
-        case "clamp":
-        case "rem":
-        case "mod":
-        case "hypot":
-          return [
-            {},
-            calc.value.type,
-            calc.value.value.map((c) => parseCalcFn(c, parseLengthValue)),
-          ];
-        case "abs":
-        case "sign":
-          return [
-            {},
-            calc.value.type,
-            [parseCalcFn(calc.value.value, parseLengthValue)],
-          ];
-        case "round":
-          return [
-            {},
-            calc.value.type,
-            [
-              calc.value.value[0],
-              parseCalcFn(calc.value.value[1], parseLengthValue),
-              parseCalcFn(calc.value.value[2], parseLengthValue),
-            ],
-          ];
-        default:
-          calc.value satisfies never;
-          return;
-      }
+      return evaluateMathFunction(calc.value, evaluate);
     default:
       calc satisfies never;
+      return undefined;
   }
+}
 
-  return;
+function evaluateMathFunction(
+  math: MathFunctionFor_Length,
+  evaluate: (calc: CalcFor_Length) => number | undefined,
+): number | undefined {
+  switch (math.type) {
+    case "calc":
+      return evaluate(math.value);
+    case "min":
+      return foldList(math.value.map(evaluate), (values) =>
+        Math.min(...values),
+      );
+    case "max":
+      return foldList(math.value.map(evaluate), (values) =>
+        Math.max(...values),
+      );
+    case "hypot":
+      return foldList(math.value.map(evaluate), (values) =>
+        Math.hypot(...values),
+      );
+    // clamp(MIN, VAL, MAX) is max(MIN, min(VAL, MAX)) (css-values-4 §10.2)
+    case "clamp":
+      return foldPair(
+        evaluate(math.value[0]),
+        foldPair(evaluate(math.value[1]), evaluate(math.value[2]), Math.min),
+        Math.max,
+      );
+    case "round":
+      return foldPair(
+        evaluate(math.value[1]),
+        evaluate(math.value[2]),
+        (value, step) => roundToStep(math.value[0], value, step),
+      );
+    // rem() takes the dividend's sign and mod() the divisor's (css-values-4 §10.4)
+    case "rem":
+      return foldPair(
+        evaluate(math.value[0]),
+        evaluate(math.value[1]),
+        (dividend, divisor) => dividend % divisor,
+      );
+    case "mod":
+      return foldPair(
+        evaluate(math.value[0]),
+        evaluate(math.value[1]),
+        (dividend, divisor) =>
+          dividend - divisor * Math.floor(dividend / divisor),
+      );
+    case "abs":
+      return foldOne(evaluate(math.value), Math.abs);
+    case "sign":
+      return foldOne(evaluate(math.value), Math.sign);
+    default:
+      math satisfies never;
+      return undefined;
+  }
+}
+
+// The multiples of a step either side of a value, picked by the strategy; a zero step gives NaN (css-values-4 §10.3)
+function roundToStep(
+  strategy: RoundingStrategy,
+  value: number,
+  step: number,
+): number {
+  const size = Math.abs(step);
+  const lower = Math.floor(value / size) * size;
+  const upper = Math.ceil(value / size) * size;
+
+  switch (strategy) {
+    case "nearest":
+      return value - lower < upper - value ? lower : upper;
+    case "up":
+      return upper;
+    case "down":
+      return lower;
+    case "to-zero":
+      return Math.abs(lower) < Math.abs(upper) ? lower : upper;
+    default:
+      strategy satisfies never;
+      return Number.NaN;
+  }
+}
+
+function foldOne(
+  value: number | undefined,
+  operation: (value: number) => number,
+): number | undefined {
+  return value === undefined ? undefined : operation(value);
+}
+
+function foldPair(
+  left: number | undefined,
+  right: number | undefined,
+  operation: (left: number, right: number) => number,
+): number | undefined {
+  return left === undefined || right === undefined
+    ? undefined
+    : operation(left, right);
+}
+
+function foldList(
+  values: readonly (number | undefined)[],
+  operation: (values: readonly number[]) => number,
+): number | undefined {
+  return values.every((value): value is number => value !== undefined)
+    ? operation(values)
+    : undefined;
 }
