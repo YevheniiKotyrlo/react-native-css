@@ -1,99 +1,151 @@
-/* eslint-disable */
 import { I18nManager, PixelRatio, Platform } from "react-native";
 
 import type { MediaCondition } from "react-native-css/compiler";
 
-import { colorScheme, vh, vw, type Getter } from "../reactivity";
+import {
+  colorScheme,
+  hoverCapableInput,
+  vh,
+  vw,
+  type Getter,
+} from "../reactivity";
+import {
+  compareMediaFeature,
+  isTruthyFeatureValue,
+  testMediaFeatureInterval,
+  type MeasuredFeatureValue,
+  type MediaComparison,
+  type MediaFeatureName,
+} from "./compare";
+import {
+  conjoin,
+  disjoin,
+  matches,
+  negate,
+  UNKNOWN,
+  type Truth,
+} from "./kleene";
+
+// The color feature counts bits per color component
+const BITS_PER_COLOR_COMPONENT = 8;
 
 export function testMediaQuery(mediaQueries: MediaCondition[], get: Getter) {
-  return mediaQueries.every((query) => test(query, get));
+  return mediaQueries.every((query) => matches(test(query, get)));
 }
 
-function test(mediaQuery: MediaCondition, get: Getter): Boolean {
+function test(mediaQuery: MediaCondition, get: Getter): Truth {
   switch (mediaQuery[0]) {
-    case "[]":
+    case "?":
+      return UNKNOWN;
     case "!!":
-      return false;
+      return isTruthyFeatureValue(getMediaFeatureValue(mediaQuery[1], get));
+    case "[]":
+      return testMediaFeatureInterval(
+        mediaQuery,
+        getMediaFeatureValue(mediaQuery[1], get),
+      );
     case "!":
-      return !test(mediaQuery[1], get);
+      return negate(test(mediaQuery[1], get));
     case "&":
-      return mediaQuery[1].every((query) => {
-        return test(query, get);
-      });
+      return conjoin(mediaQuery[1], (query) => test(query, get));
     case "|":
-      return mediaQuery[1].some((query) => {
-        return test(query, get);
-      });
+      return disjoin(mediaQuery[1], (query) => test(query, get));
     case ">":
     case ">=":
     case "<":
     case "<=":
-    case "=": {
+    case "=":
       return testComparison(mediaQuery, get);
-    }
+    default:
+      mediaQuery satisfies never;
+      return UNKNOWN;
   }
 }
 
-function testComparison(mediaQuery: MediaCondition, get: Getter): Boolean {
-  const value = mediaQuery[2];
+function testComparison(
+  mediaQuery: Readonly<MediaComparison>,
+  get: Getter,
+): Truth {
+  const [operator, name, value] = mediaQuery;
 
-  switch (mediaQuery[1]) {
+  switch (name) {
+    // dir and platform are this library's conditions rather than media features, so neither has a boolean context
     case "dir":
-      return value === (I18nManager.isRTL ? "rtl" : "ltr");
-    case "hover":
-      return true;
+      return compareMediaFeature(
+        operator,
+        I18nManager.isRTL ? "rtl" : "ltr",
+        value,
+      );
     case "platform":
-      return value === "native" || value === Platform.OS;
-    case "prefers-color-scheme": {
-      return value === get(colorScheme);
-    }
     case "display-mode":
-      return value === "native" || Platform.OS === value;
-    case "min-width":
-      return typeof value === "number" && get(vw) >= value;
-    case "max-width":
-      return typeof value === "number" && get(vw) <= value;
-    case "min-height":
-      return typeof value === "number" && get(vh) >= value;
-    case "max-height":
-      return typeof value === "number" && get(vh) <= value;
-    case "orientation":
-      return value === "landscape" ? get(vh) < get(vw) : get(vh) >= get(vw);
+      return (
+        value === "native" || compareMediaFeature(operator, Platform.OS, value)
+      );
+    // any-pointer matches each kind of pointer the device has, where pointer names the primary one (MQ5 §7.3)
+    case "any-pointer":
+      return operator === "=" && typeof value === "string"
+        ? availablePointers(get).includes(value)
+        : UNKNOWN;
+    default:
+      return compareMediaFeature(
+        operator,
+        getMediaFeatureValue(name, get),
+        value,
+      );
   }
+}
 
-  if (typeof value !== "number") {
-    return false;
-  }
-
-  let left: number | undefined;
-  const right = value;
-
-  switch (mediaQuery[1]) {
+function getMediaFeatureValue(
+  name: MediaFeatureName,
+  get: Getter,
+): MeasuredFeatureValue {
+  switch (name) {
+    case "hover":
+    case "any-hover":
+      return pointsFinely(get) ? "hover" : "none";
+    case "pointer":
+    case "any-pointer":
+      return pointsFinely(get) ? "fine" : "coarse";
+    case "display-mode":
+      return Platform.OS;
+    case "prefers-color-scheme":
+      return get(colorScheme) ?? undefined;
+    case "color":
+      return BITS_PER_COLOR_COMPONENT;
+    // A React Native screen is a full-color bitmap that redraws as fast as scripts change it
+    case "color-index":
+    case "monochrome":
+    case "grid":
+      return 0;
+    case "scripting":
+      return "enabled";
+    case "update":
+      return "fast";
     case "width":
-      left = get(vw);
-      break;
+      return get(vw);
     case "height":
-      left = get(vh);
-      break;
+      return get(vh);
     case "resolution":
-      left = PixelRatio.get();
-      break;
+      return PixelRatio.get();
+    case "orientation":
+      return get(vh) < get(vw) ? "landscape" : "portrait";
     default:
-      return false;
+      return undefined;
+  }
+}
+
+// A touchscreen, the input of iOS and Android until a pointer hovers an element with a :hover style, cannot hover and points coarsely (MQ5 §7.1, §7.2)
+function pointsFinely(get: Getter): boolean {
+  return (
+    get(hoverCapableInput) ||
+    (Platform.OS !== "ios" && Platform.OS !== "android")
+  );
+}
+
+function availablePointers(get: Getter): readonly string[] {
+  if (Platform.OS !== "ios" && Platform.OS !== "android") {
+    return ["fine"];
   }
 
-  switch (mediaQuery[0]) {
-    case "=":
-      return left === right;
-    case ">":
-      return left > right;
-    case ">=":
-      return left >= right;
-    case "<":
-      return left < right;
-    case "<=":
-      return left <= right;
-    default:
-      return false;
-  }
+  return get(hoverCapableInput) ? ["coarse", "fine"] : ["coarse"];
 }

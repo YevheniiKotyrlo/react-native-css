@@ -1,4 +1,3 @@
-/* eslint-disable */
 import type {
   CalcFor_Length,
   MediaCondition as CSSMediaCondition,
@@ -8,9 +7,11 @@ import type {
   QueryFeatureFor_MediaFeatureId,
 } from "lightningcss";
 
+import { asciiLowerCase } from "../utilities/ascii-case";
 import type {
   MediaCondition,
   MediaFeatureComparison,
+  MediaFeatureOperand,
   StyleDescriptor,
 } from "./compiler.types";
 import { parseLength } from "./declarations";
@@ -38,17 +39,12 @@ export function parseMediaQuery(
 
   if (query.condition) {
     condition = parseMediaQueryCondition(query.condition, builder);
-
-    // If any of these are undefined, the media query is invalid
-    if (!condition || condition.some((v) => v === undefined)) {
-      return false;
-    }
   }
 
   let mediaQuery: MediaCondition | undefined =
     platformCondition && condition
       ? ["&", [platformCondition, condition]]
-      : platformCondition || condition;
+      : (platformCondition ?? condition);
 
   if (!mediaQuery) {
     // Unqualified all/screen apply; not all and not screen do not.
@@ -59,36 +55,69 @@ export function parseMediaQuery(
     mediaQuery = ["!", mediaQuery];
   }
 
+  if (!canMatch(mediaQuery)) {
+    return false;
+  }
+
   builder.addMediaQuery(mediaQuery);
   return true;
+}
+
+// A condition its unknown terms and unresolved operands leave no way to be true compiles to no rule, as an unknown keeps an `and` or a `not` unknown (MQ5 §3.1)
+export function canMatch(condition: Readonly<MediaCondition>): boolean {
+  return canEvaluateTo(condition, true);
+}
+
+function canEvaluateTo(
+  condition: Readonly<MediaCondition>,
+  truth: boolean,
+): boolean {
+  switch (condition[0]) {
+    case "?":
+      return false;
+    case "!":
+      return canEvaluateTo(condition[1], !truth);
+    case "&":
+      return truth
+        ? condition[1].every((child) => canEvaluateTo(child, true))
+        : condition[1].some((child) => canEvaluateTo(child, false));
+    case "|":
+      return truth
+        ? condition[1].some((child) => canEvaluateTo(child, true))
+        : condition[1].every((child) => canEvaluateTo(child, false));
+    case "!!":
+      return true;
+    case "[]": {
+      const [, , start, , end] = condition;
+      return truth
+        ? start !== null && end !== null
+        : start !== null || end !== null;
+    }
+    case "=":
+    case ">":
+    case ">=":
+    case "<":
+    case "<=":
+      return condition[2] !== null;
+    default:
+      condition satisfies never;
+      return true;
+  }
 }
 
 function parseMediaQueryCondition(
   query: CSSMediaCondition,
   builder: StylesheetBuilder,
-): MediaCondition | undefined {
+): MediaCondition {
   switch (query.type) {
-    case "feature": {
-      const feature = parseFeature(query.value, builder);
-      return feature?.some((value) => value === undefined)
-        ? undefined
-        : feature;
-    }
+    case "feature":
+      return parseFeature(query.value, builder);
     case "not":
-      const mediaQuery = parseMediaQueryCondition(query.value, builder);
-      return mediaQuery ? ["!", mediaQuery] : undefined;
-    case "operation":
-      const parsed = query.conditions.map((c) =>
-        parseMediaQueryCondition(c, builder),
+      return ["!", parseMediaQueryCondition(query.value, builder)];
+    case "operation": {
+      const mediaQueries = query.conditions.map((condition) =>
+        parseMediaQueryCondition(condition, builder),
       );
-      if (query.operator === "and" && parsed.some((c) => !c)) {
-        return;
-      }
-      const mediaQueries = parsed.filter((v): v is MediaCondition => !!v);
-
-      if (mediaQueries.length === 0) {
-        return;
-      }
 
       switch (query.operator) {
         case "and":
@@ -97,47 +126,89 @@ function parseMediaQueryCondition(
           return ["|", mediaQueries];
         default:
           query.operator satisfies never;
-          return;
+          throw new Error(
+            `Unknown media condition operator ${JSON.stringify(query)}`,
+          );
       }
+    }
     default:
       query satisfies never;
+      throw new Error(`Unknown media condition ${JSON.stringify(query)}`);
   }
+}
 
-  return;
+// The keywords Media Queries 4 and 5 give these discrete features, and any other keyword leaves the feature unknown (MQ5 §3.1); display-mode is left out, since the library answers it with platform names
+const FEATURE_KEYWORDS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["hover", ["none", "hover"]],
+  ["any-hover", ["none", "hover"]],
+  ["pointer", ["none", "coarse", "fine"]],
+  ["any-pointer", ["none", "coarse", "fine"]],
+  ["orientation", ["portrait", "landscape"]],
+  ["prefers-color-scheme", ["light", "dark"]],
+  ["prefers-reduced-motion", ["no-preference", "reduce"]],
+  ["scripting", ["none", "initial-only", "enabled"]],
+  ["update", ["none", "slow", "fast"]],
+]);
+
+export function isUnknownKeyword(
+  name: string,
+  operand: Readonly<MediaFeatureOperand>,
+) {
+  const keywords = FEATURE_KEYWORDS.get(name);
+  return (
+    keywords !== undefined &&
+    typeof operand === "string" &&
+    !keywords.includes(operand)
+  );
 }
 
 function parseFeature(
   feature: QueryFeatureFor_MediaFeatureId,
   builder: StylesheetBuilder,
-): MediaCondition | undefined {
+): MediaCondition {
   switch (feature.type) {
     case "boolean":
       return ["!!", feature.name];
-    case "plain":
-      return [
-        "=",
-        feature.name,
-        parseMediaFeatureValue(feature.value, builder),
-      ];
-    case "range":
-      return [
-        parseMediaFeatureOperator(feature.operator),
-        feature.name,
-        parseMediaFeatureValue(feature.value, builder),
-      ];
-    case "interval":
-      return [
-        "[]",
-        feature.name,
-        parseMediaFeatureValue(feature.start, builder),
-        parseMediaFeatureOperator(feature.startOperator),
-        parseMediaFeatureValue(feature.end, builder),
-        parseMediaFeatureOperator(feature.endOperator),
-      ];
+    case "plain": {
+      const operand = parseFeatureOperand(feature.value, builder);
+      return operand === undefined || isUnknownKeyword(feature.name, operand)
+        ? ["?"]
+        : ["=", feature.name, operand];
+    }
+    case "range": {
+      const operand = parseFeatureOperand(feature.value, builder);
+      return operand === undefined
+        ? ["?"]
+        : [parseMediaFeatureOperator(feature.operator), feature.name, operand];
+    }
+    case "interval": {
+      const start = parseFeatureOperand(feature.start, builder);
+      const end = parseFeatureOperand(feature.end, builder);
+      return start === undefined || end === undefined
+        ? ["?"]
+        : [
+            "[]",
+            feature.name,
+            start,
+            parseMediaFeatureOperator(feature.startOperator),
+            end,
+            parseMediaFeatureOperator(feature.endOperator),
+          ];
+    }
     default:
       feature satisfies never;
+      throw new Error(`Unknown media feature ${JSON.stringify(feature)}`);
   }
-  return;
+}
+
+// No browser takes env() as a feature's value, so the caller drops a feature holding one; any other value the compiler cannot resolve compiles to null, which leaves its term unknown
+export function parseFeatureOperand(
+  value: CSSMediaFeatureValue,
+  builder: StylesheetBuilder,
+): MediaFeatureOperand | undefined {
+  return value.type === "env"
+    ? undefined
+    : (parseMediaFeatureValue(value, builder) ?? null);
 }
 
 export function parseMediaFeatureValue(
@@ -145,8 +216,12 @@ export function parseMediaFeatureValue(
   builder: StylesheetBuilder,
 ): StyleDescriptor {
   switch (value.type) {
+    // <mq-boolean> is the integer 0 or 1 (MQ4 §5.3)
     case "boolean":
+      return value.value ? 1 : 0;
     case "ident":
+      // Keywords are ASCII case-insensitive (css-values-4 §4.1)
+      return asciiLowerCase(value.value);
     case "integer":
     case "number":
       return value.value;
@@ -176,9 +251,11 @@ export function parseMediaFeatureValue(
       }
     case "ratio":
     case "env":
+      return undefined;
+    default:
+      value satisfies never;
+      return undefined;
   }
-
-  return;
 }
 
 export function parseMediaFeatureOperator(
@@ -197,7 +274,9 @@ export function parseMediaFeatureOperator(
       return "<=";
     default:
       operator satisfies never;
-      throw new Error(`Unknown MediaFeatureComparison operator ${operator}`);
+      throw new Error(
+        `Unknown MediaFeatureComparison operator ${JSON.stringify(operator)}`,
+      );
   }
 }
 
