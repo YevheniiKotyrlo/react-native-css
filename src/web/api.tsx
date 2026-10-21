@@ -9,12 +9,18 @@ import { Appearance } from "react-native";
 import type {
   ColorScheme,
   Props,
+  ReducedMotion,
   StyledConfiguration,
   StyledOptions,
 } from "react-native-css";
 
-import type { ReactComponent, Styled } from "../runtime.types";
+import type {
+  ReactComponent,
+  ReducedMotionPreference,
+  Styled,
+} from "../runtime.types";
 import { assignStyle } from "./assign-style";
+import { browserPreference } from "./browser-preference";
 
 const defaultMapping: StyledConfiguration<ComponentType<{ style: unknown }>> = {
   className: "style",
@@ -71,6 +77,21 @@ export const colorScheme: ColorScheme = {
     Appearance.setColorScheme(name ?? "unspecified");
   },
 };
+
+export const reducedMotion: ReducedMotion =
+  browserPreference<ReducedMotionPreference>(() => {
+    // Server rendering has no window, and React Native's jest environment a window without matchMedia
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return undefined;
+    }
+
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "reduce"
+      : "no-preference";
+  });
 
 /**
  * @deprecated Use `<VariableContextProvider />` instead.
