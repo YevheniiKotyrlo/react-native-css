@@ -133,8 +133,6 @@ function optionalMembersRejectingUndefined(
     ts.isMethodDeclaration(declaration) ||
     typeNodeRejectsUndefined(declaration.type);
 
-  const checkedTypes = new Set<ts.Type>();
-
   const referenceArguments = (type: ts.Type): readonly ts.Type[] =>
     (type.flags & ts.TypeFlags.Object) !== 0 &&
     ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Reference) !== 0
@@ -194,8 +192,14 @@ function optionalMembersRejectingUndefined(
     }
   };
 
+  // A type is walked once, under the first path that reaches it, so a recursive one such as `type Nested = string | Nested[]` ends
+  const walkedTypes = new Set<ts.Type>();
+
   // An option type sits in a member's type itself, in a union or an intersection, in a tuple, in a generic's arguments, or behind a mapped type
   const descend = (type: ts.Type, path: string): void => {
+    if (walkedTypes.has(type)) return;
+    walkedTypes.add(type);
+
     if (type.isUnionOrIntersection()) {
       for (const part of type.types) descend(part, path);
     } else if (
@@ -215,9 +219,6 @@ function optionalMembersRejectingUndefined(
 
   // A resolved type's members as a consumer writes them, inherited, picked and mapped ones included, and the option types they reach
   const checkMembers = (type: ts.Type, path: string): void => {
-    if (checkedTypes.has(type)) return;
-    checkedTypes.add(type);
-
     descendIntoStructure(type, path);
 
     for (const property of checker.getPropertiesOfType(type)) {
@@ -530,6 +531,8 @@ export type GenericNamed<T> = [first: T, second?: number];
 export interface Wrapper<T> { box?: { inner?: string; value?: T | undefined } | undefined }
 export interface FirstUse { wrapper?: Wrapper<string> | undefined }
 export interface SecondUse { wrapper?: Wrapper<number> | undefined }
+type Nested = string | Item | Nested[];
+export interface RecursiveOptions { nested?: Nested | undefined }
 `;
 
 let program: ts.Program;
@@ -604,6 +607,7 @@ test.each([
   ],
   ["GenericPair", ["87: number?"]],
   ["GenericNamed", ["88: second?: number"]],
+  ["RecursiveOptions", ["Item.tag"]],
 ])(
   "the walk reaches the options %s holds, and names each under the type that declares it",
   (name, expected) => {
