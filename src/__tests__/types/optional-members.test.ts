@@ -18,6 +18,28 @@ type TypeDeclaration =
   | ts.TypeAliasDeclaration
   | ts.ClassDeclaration;
 
+const isTypeDeclaration = (node: ts.Node): node is TypeDeclaration =>
+  ts.isInterfaceDeclaration(node) ||
+  ts.isTypeAliasDeclaration(node) ||
+  ts.isClassDeclaration(node);
+
+type OptionalMemberDeclaration =
+  | ts.PropertySignature
+  | ts.PropertyDeclaration
+  | ts.MethodSignature
+  | ts.MethodDeclaration
+  | ts.NamedTupleMember;
+
+const isOptionalMemberDeclaration = (
+  node: ts.Node,
+): node is OptionalMemberDeclaration =>
+  (ts.isPropertySignature(node) ||
+    ts.isPropertyDeclaration(node) ||
+    ts.isMethodSignature(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isNamedTupleMember(node)) &&
+  node.questionToken !== undefined;
+
 // Under exactOptionalPropertyTypes a bare `?: T` rejects an explicit undefined, which React Native's own optional props accept
 function optionalMembersRejectingUndefined(
   program: ts.Program,
@@ -32,10 +54,13 @@ function optionalMembersRejectingUndefined(
   const isOwnDeclaration = (node: ts.Node): boolean =>
     !node.getSourceFile().fileName.includes("/node_modules/");
 
+  // A type parameter, such as one an augmentation of a React Native interface redeclares, stands for a type rather than being one
   const isOwnType = (type: ts.Type): boolean =>
-    (type.aliasSymbol ?? type.getSymbol())?.declarations?.some(
+    (type.flags & ts.TypeFlags.TypeParameter) === 0 &&
+    ((type.aliasSymbol ?? type.getSymbol())?.declarations?.some(
       isOwnDeclaration,
-    ) ?? false;
+    ) ??
+      false);
 
   const partsOf = (type: ts.Type): readonly ts.Type[] =>
     type.isUnion() ? type.types : [type];
@@ -53,31 +78,62 @@ function optionalMembersRejectingUndefined(
     );
   };
 
-  // A type is read once, under the first path that reaches it
+  // Each place is reported once: a member its declaration makes optional under the type that declares it, anything else under the first path or line that reaches it
   const offenders = new Set<string>();
-  const checkedTypes = new Set<ts.Type>();
-  const checkedMappedTypes = new Set<ts.Type>();
+  const reported = new Set<ts.Node | string>();
+  const report = (place: ts.Node | string, name: string): void => {
+    if (reported.has(place)) return;
+    reported.add(place);
+    offenders.add(name);
+  };
 
-  const addsQuestionToken = (node: ts.MappedTypeNode): boolean =>
-    node.questionToken !== undefined &&
-    node.questionToken.kind !== ts.SyntaxKind.MinusToken;
+  const lineOf = (node: ts.Node): string => {
+    const nodeSource = node.getSourceFile();
+    const { line } = nodeSource.getLineAndCharacterOfPosition(
+      node.getStart(nodeSource),
+    );
+    const written = node.getText(nodeSource).replace(/\s+/g, " ");
+    return `${line + 1}: ${written.length > 80 ? `${written.slice(0, 79)}…` : written}`;
+  };
 
-  // The mapped type alias behind a type, when the alias adds `?`, as a library's Partial or one of this package's does
-  const optionalMappedAlias = (
-    type: ts.Type,
-  ): ts.TypeAliasDeclaration | undefined => {
-    const declaration = type.aliasSymbol?.declarations?.[0];
-    return declaration !== undefined &&
-      ts.isTypeAliasDeclaration(declaration) &&
-      ts.isMappedTypeNode(declaration.type) &&
-      addsQuestionToken(declaration.type)
-      ? declaration
+  const declaringTypeName = (
+    member: OptionalMemberDeclaration,
+  ): string | undefined => {
+    const owner = member.parent;
+    if (ts.isInterfaceDeclaration(owner) || ts.isClassDeclaration(owner)) {
+      return owner.name?.text;
+    }
+    return ts.isTypeLiteralNode(owner) &&
+      ts.isTypeAliasDeclaration(owner.parent)
+      ? owner.parent.name.text
       : undefined;
   };
 
-  // Such an alias makes every member it maps optional by this package's choice
-  const addsOptionalMembers = (type: ts.Type): boolean =>
-    optionalMappedAlias(type) !== undefined;
+  const reportDeclaredMember = (
+    member: OptionalMemberDeclaration,
+    anonymousName: () => string,
+  ): void => {
+    const owner = declaringTypeName(member);
+    report(
+      member,
+      owner === undefined
+        ? anonymousName()
+        : `${owner}.${member.name.getText(member.getSourceFile())}`,
+    );
+  };
+
+  const typeNodeRejectsUndefined = (node: ts.TypeNode | undefined): boolean =>
+    node !== undefined && !acceptsUndefined(checker.getTypeFromTypeNode(node));
+
+  // An optional method's type is a function, which an explicit undefined never matches
+  const declarationRejectsUndefined = (
+    declaration: OptionalMemberDeclaration,
+  ): boolean =>
+    ts.isMethodSignature(declaration) ||
+    ts.isMethodDeclaration(declaration) ||
+    typeNodeRejectsUndefined(declaration.type);
+
+  const checkedTypes = new Set<ts.Type>();
 
   const referenceArguments = (type: ts.Type): readonly ts.Type[] =>
     (type.flags & ts.TypeFlags.Object) !== 0 &&
@@ -85,21 +141,47 @@ function optionalMembersRejectingUndefined(
       ? checker.getTypeArguments(type as ts.TypeReference)
       : [];
 
-  const mentionsOwnType = (type: ts.Type): boolean =>
-    isOwnType(type) ||
-    (type.aliasTypeArguments ?? []).some(mentionsOwnType) ||
-    referenceArguments(type).some(mentionsOwnType);
+  // A library's generic, such as Map or Promise, holds this package's types in its arguments, through any union or intersection; a type is answered once, so a recursive one ends
+  const mentionsOwnTypeMemo = new Map<ts.Type, boolean>();
+  const mentionsOwnType = (type: ts.Type): boolean => {
+    const known = mentionsOwnTypeMemo.get(type);
+    if (known !== undefined) return known;
+    mentionsOwnTypeMemo.set(type, false);
+    const mentions =
+      isOwnType(type) ||
+      (type.isUnionOrIntersection() && type.types.some(mentionsOwnType)) ||
+      (type.aliasTypeArguments ?? []).some(mentionsOwnType) ||
+      referenceArguments(type).some(mentionsOwnType);
+    mentionsOwnTypeMemo.set(type, mentions);
+    return mentions;
+  };
 
-  // A call or construct signature's parameters, an index signature's values and a base type are written by a consumer too
+  const isMappedType = (type: ts.Type): boolean =>
+    (type.flags & ts.TypeFlags.Object) !== 0 &&
+    ((type as ts.ObjectType).objectFlags & ts.ObjectFlags.Mapped) !== 0;
+
+  // A signature's type parameters' constraints, its parameters and its return type, such as a component it returns, reach what a consumer writes
+  const descendIntoSignature = (
+    signature: ts.Signature,
+    path: string,
+  ): void => {
+    for (const parameter of signature.getTypeParameters() ?? []) {
+      const constraint = parameter.getConstraint();
+      if (constraint !== undefined) {
+        descend(constraint, `${path}<${parameter.symbol.name}>`);
+      }
+    }
+    for (const parameter of signature.getParameters()) {
+      descend(checker.getTypeOfSymbol(parameter), `${path}(${parameter.name})`);
+    }
+    descend(signature.getReturnType(), `${path}()`);
+  };
+
+  // Call and construct signatures, index signatures and base types reach what a consumer writes too
   const descendIntoStructure = (type: ts.Type, path: string): void => {
     for (const kind of [ts.SignatureKind.Call, ts.SignatureKind.Construct]) {
       for (const signature of checker.getSignaturesOfType(type, kind)) {
-        for (const parameter of signature.getParameters()) {
-          descend(
-            checker.getTypeOfSymbol(parameter),
-            `${path}(${parameter.name})`,
-          );
-        }
+        descendIntoSignature(signature, path);
       }
     }
     for (const index of checker.getIndexInfosOfType(type)) {
@@ -112,71 +194,59 @@ function optionalMembersRejectingUndefined(
     }
   };
 
-  // An option type sits in a member's type itself, in a union or an intersection, in an array or a tuple, in a generic's arguments, or behind an alias over this package's types
+  // An option type sits in a member's type itself, in a union or an intersection, in a tuple, in a generic's arguments, or behind a mapped type
   const descend = (type: ts.Type, path: string): void => {
     if (type.isUnionOrIntersection()) {
-      type.types.forEach((part) => {
-        descend(part, path);
-      });
-    } else if (checker.isArrayType(type)) {
-      checker.getTypeArguments(type as ts.TypeReference).forEach((element) => {
-        descend(element, path);
-      });
-    } else if (checker.isTupleType(type)) {
-      checkMembers(type, path, false);
-    } else if ((type.flags & ts.TypeFlags.Object) !== 0) {
-      if (addsOptionalMembers(type)) {
-        checkMembers(type, path, true);
-      } else if (isOwnType(type)) {
-        checkMembers(type, path, false);
-      } else if (mentionsOwnType(type)) {
-        // A library's generic, such as Map, holds this package's types only in its arguments
-        referenceArguments(type).forEach((argument) => {
-          descend(argument, path);
-        });
-        checkMembers(type, path, false);
-      }
+      for (const part of type.types) descend(part, path);
+    } else if (
+      checker.isTupleType(type) ||
+      isMappedType(type) ||
+      isOwnType(type)
+    ) {
+      checkMembers(type, path);
+    } else if (
+      (type.flags & ts.TypeFlags.Object) !== 0 &&
+      mentionsOwnType(type)
+    ) {
+      for (const argument of referenceArguments(type)) descend(argument, path);
+      checkMembers(type, path);
     }
   };
 
   // A resolved type's members as a consumer writes them, inherited, picked and mapped ones included, and the option types they reach
-  const checkMembers = (
-    type: ts.Type,
-    path: string,
-    ownsEveryMember: boolean,
-  ): void => {
-    const checked = ownsEveryMember ? checkedMappedTypes : checkedTypes;
-    if (checked.has(type)) return;
-    checked.add(type);
+  const checkMembers = (type: ts.Type, path: string): void => {
+    if (checkedTypes.has(type)) return;
+    checkedTypes.add(type);
 
     descendIntoStructure(type, path);
 
-    // A member the mapped type's source already makes optional keeps that source's spelling
-    const mappedSource = ownsEveryMember
-      ? type.aliasTypeArguments?.[0]
-      : undefined;
     for (const property of checker.getPropertiesOfType(type)) {
-      const declaredByAnotherPackage =
-        property.declarations?.every((node) => !isOwnDeclaration(node)) ??
-        false;
-      const sourceProperty =
-        mappedSource && checker.getPropertyOfType(mappedSource, property.name);
-      const optionalInSource =
-        sourceProperty !== undefined &&
-        (sourceProperty.flags & ts.SymbolFlags.Optional) !== 0;
-      // A member another package declares, such as a React Native prop, is that package's, unless this package's mapped type made it optional
-      if (declaredByAnotherPackage && (!ownsEveryMember || optionalInSource)) {
-        continue;
-      }
-      const propertyType = checker.getTypeOfSymbol(property);
       const memberPath = `${path}.${property.name}`;
+      const propertyType = checker.getTypeOfSymbol(property);
       if (
         (property.flags & ts.SymbolFlags.Optional) !== 0 &&
         !acceptsUndefined(propertyType)
       ) {
-        offenders.add(memberPath);
+        const declaration = property.declarations?.find(
+          isOptionalMemberDeclaration,
+        );
+        if (
+          declaration === undefined ||
+          !declarationRejectsUndefined(declaration)
+        ) {
+          // A mapped type made the member optional or gave it a type without undefined, so the fix is where the mapped type is applied
+          report(memberPath, memberPath);
+        } else if (isOwnDeclaration(declaration)) {
+          reportDeclaredMember(declaration, () => memberPath);
+        }
+        // A member another package declares optional without undefined, such as a React Native prop, is that package's
       }
-      descend(propertyType, memberPath);
+      if (
+        (property.declarations?.some(isOwnDeclaration) ?? true) ||
+        mentionsOwnType(propertyType)
+      ) {
+        descend(propertyType, memberPath);
+      }
     }
   };
 
@@ -196,8 +266,9 @@ function optionalMembersRejectingUndefined(
     );
   };
 
-  const typeNodeRejectsUndefined = (node: ts.TypeNode | undefined): boolean =>
-    node !== undefined && !acceptsUndefined(checker.getTypeFromTypeNode(node));
+  const addsQuestionToken = (node: ts.MappedTypeNode): boolean =>
+    node.questionToken !== undefined &&
+    node.questionToken.kind !== ts.SyntaxKind.MinusToken;
 
   // A mapped type over keyof T keeps T's optional members optional unless it says -?
   const isOptionalMappedType = (node: ts.MappedTypeNode): boolean => {
@@ -230,7 +301,20 @@ function optionalMembersRejectingUndefined(
     );
   };
 
-  // A library's mapped type that adds `?`, such as Partial, makes members its source file never spells out
+  // The mapped type alias behind a type, when the alias adds `?`, as a library's Partial does
+  const optionalMappedAlias = (
+    type: ts.Type,
+  ): ts.TypeAliasDeclaration | undefined => {
+    const declaration = type.aliasSymbol?.declarations?.[0];
+    return declaration !== undefined &&
+      ts.isTypeAliasDeclaration(declaration) &&
+      ts.isMappedTypeNode(declaration.type) &&
+      addsQuestionToken(declaration.type)
+      ? declaration
+      : undefined;
+  };
+
+  // A library's mapped type that adds `?`, such as Partial, makes optional the members its source declares required
   const addsOptionalMembersRejectingUndefined = (
     node: ts.TypeReferenceNode | ts.ExpressionWithTypeArguments,
   ): boolean => {
@@ -252,35 +336,20 @@ function optionalMembersRejectingUndefined(
       checker
         .getPropertiesOfType(argument)
         .some(
-          (property) => !acceptsUndefined(checker.getTypeOfSymbol(property)),
+          (property) =>
+            (property.flags & ts.SymbolFlags.Optional) === 0 &&
+            !acceptsUndefined(checker.getTypeOfSymbol(property)),
         )
     );
   };
 
-  const ownerName = (node: ts.Node): string =>
-    ts.findAncestor(
-      node.parent,
-      (
-        ancestor,
-      ): ancestor is
-        | ts.InterfaceDeclaration
-        | ts.TypeAliasDeclaration
-        | ts.ClassDeclaration =>
-        ts.isInterfaceDeclaration(ancestor) ||
-        ts.isTypeAliasDeclaration(ancestor) ||
-        ts.isClassDeclaration(ancestor),
-    )?.name?.text ?? "";
-
   // A generic declaration resolves only once instantiated, so its members are read as written
   const visitGeneric = (node: ts.Node): void => {
-    const rejects =
-      ((ts.isPropertySignature(node) ||
-        ts.isPropertyDeclaration(node) ||
-        ts.isNamedTupleMember(node)) &&
-        node.questionToken !== undefined &&
-        typeNodeRejectsUndefined(node.type)) ||
-      ((ts.isMethodSignature(node) || ts.isMethodDeclaration(node)) &&
-        node.questionToken !== undefined) ||
+    if (isOptionalMemberDeclaration(node)) {
+      if (declarationRejectsUndefined(node)) {
+        reportDeclaredMember(node, () => lineOf(node));
+      }
+    } else if (
       (ts.isOptionalTypeNode(node) && typeNodeRejectsUndefined(node.type)) ||
       (ts.isMappedTypeNode(node) &&
         isOptionalMappedType(node) &&
@@ -288,16 +357,20 @@ function optionalMembersRejectingUndefined(
         typeNodeRejectsUndefined(node.type)) ||
       ((ts.isTypeReferenceNode(node) ||
         ts.isExpressionWithTypeArguments(node)) &&
-        addsOptionalMembersRejectingUndefined(node));
+        addsOptionalMembersRejectingUndefined(node))
+    ) {
+      report(node, lineOf(node));
+    }
 
     // A member a generic declaration types without its parameters resolves as any other
     if (
       (ts.isPropertySignature(node) || ts.isPropertyDeclaration(node)) &&
       node.type !== undefined
     ) {
+      const owner = ts.findAncestor(node.parent, isTypeDeclaration);
       descend(
         checker.getTypeFromTypeNode(node.type),
-        `${ownerName(node)}.${node.name.getText(source)}`,
+        `${owner?.name?.text ?? ""}.${node.name.getText(source)}`,
       );
     }
 
@@ -308,13 +381,6 @@ function optionalMembersRejectingUndefined(
     ) {
       const inherited = checker.getTypeAtLocation(node);
       descend(inherited, inherited.getSymbol()?.name ?? node.getText(source));
-    }
-
-    if (rejects) {
-      const { line } = source.getLineAndCharacterOfPosition(
-        node.getStart(source),
-      );
-      offenders.add(`${line + 1}: ${node.getText(source).split("\n")[0]}`);
     }
 
     ts.forEachChild(node, visitGeneric);
@@ -330,15 +396,15 @@ function optionalMembersRejectingUndefined(
     const symbol = checker.getSymbolAtLocation(name);
     if (symbol === undefined) return;
     descend(checker.getDeclaredTypeOfSymbol(symbol), name.text);
+    // A class's constructor, which a consumer calls, is on its static side
+    if (ts.isClassDeclaration(declaration)) {
+      descend(checker.getTypeOfSymbol(symbol), name.text);
+    }
   };
 
   const typeDeclarations: TypeDeclaration[] = [];
   const collect = (node: ts.Node): void => {
-    if (
-      ts.isInterfaceDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isClassDeclaration(node)
-    ) {
+    if (isTypeDeclaration(node)) {
       typeDeclarations.push(node);
     }
     ts.forEachChild(node, collect);
@@ -437,6 +503,33 @@ export interface ForeignOptions {
   rect?: Partial<import("optional-members-fixture").Rect> | undefined;
   props?: import("optional-members-fixture").ForeignProps | undefined;
 }
+export interface Returns { make(): { flag?: boolean } }
+export type Factory = <M extends { constrained?: boolean }>(mapping: M) => { produced?: string };
+export declare class Constructed { constructor(options?: { built?: boolean }) }
+export interface Constructs { new (options?: { made?: boolean }): object }
+interface PresetOptions { minify?: boolean }
+export interface UnionArguments {
+  presets?: Record<string, PresetOptions | false> | undefined;
+  maybe?: Map<string, Item | undefined> | undefined;
+}
+export interface UnionElements { items?: readonly (Item | null)[] | undefined }
+export interface NestedMapped {
+  viewport?: Readonly<Partial<import("optional-members-fixture").Rect>> | undefined;
+  picked?: Pick<Partial<import("optional-members-fixture").Rect>, "x"> | undefined;
+}
+export interface GenericForeignPartial<T> { props?: Partial<import("optional-members-fixture").ForeignProps> | undefined; value?: T | undefined }
+interface Holder { inner?: string }
+export declare class GenericClass<T> {
+  flag?: boolean;
+  method?(): void;
+  holder?: Holder | undefined;
+  value?: T | undefined;
+}
+export type GenericPair<T> = [T, number?];
+export type GenericNamed<T> = [first: T, second?: number];
+export interface Wrapper<T> { box?: { inner?: string; value?: T | undefined } | undefined }
+export interface FirstUse { wrapper?: Wrapper<string> | undefined }
+export interface SecondUse { wrapper?: Wrapper<number> | undefined }
 `;
 
 let program: ts.Program;
@@ -467,11 +560,8 @@ test("the walk finds each form of an optional member that rejects undefined, and
       "Labels.label",
       "RenamedLabels.labelText",
       "Shared.filename",
-      "SharedOptions.filename",
-      "PickedShared.filename",
       "FlagOptions.features.experimental",
       "Item.tag",
-      "WrappedOptions.frozen.value",
       "WrappedOptions.joined.extra",
       "TupleOptions.pair.1",
       "Callable(options).passThrough",
@@ -479,20 +569,58 @@ test("the walk finds each form of an optional member that rejects undefined, and
       "ExtendsForeignPartial.x",
       "58: { [K in keyof T]?: T[K] }",
       "OwnMappedOptions.rect.x",
+      "Returns.make().flag",
+      "Factory<M>.constrained",
+      "Factory().produced",
+      "Constructed(options).built",
+      "Constructs(options).made",
+      "PresetOptions.minify",
+      "NestedMapped.viewport.x",
+      "NestedMapped.picked.x",
+      "Holder.inner",
+      "GenericClass.flag",
+      "GenericClass.method",
+      "87: number?",
+      "88: second?: number",
+      "Wrapper.box.inner",
     ],
   );
 });
 
 test.each([
   ["Callable", ["Callable(options).passThrough"]],
-  ["IndexedOptions", ["IndexedOptions.aliases[].target"]],
-  ["MappedOptions", ["MappedOptions.lookup.tag"]],
+  ["IndexedOptions", ["AliasOptions.target"]],
+  ["MappedOptions", ["Item.tag"]],
+  ["GenericHolder", ["Item.tag"]],
+  ["Returns", ["Returns.make().flag"]],
+  ["Factory", ["Factory<M>.constrained", "Factory().produced"]],
+  ["Constructed", ["Constructed(options).built"]],
+  ["Constructs", ["Constructs(options).made"]],
+  ["UnionArguments", ["PresetOptions.minify", "Item.tag"]],
+  ["UnionElements", ["Item.tag"]],
+  [
+    "GenericClass",
+    ["GenericClass.flag", "GenericClass.method", "Holder.inner"],
+  ],
+  ["GenericPair", ["87: number?"]],
+  ["GenericNamed", ["88: second?: number"]],
+])(
+  "the walk reaches the options %s holds, and names each under the type that declares it",
+  (name, expected) => {
+    expect(
+      optionalMembersRejectingUndefined(program, fixtureName, [name]),
+    ).toStrictEqual(expected);
+  },
+);
+
+test.each([
   ["ExtendsForeignPartial", ["ExtendsForeignPartial.x"]],
   ["OwnMappedOptions", ["OwnMappedOptions.rect.x"]],
   ["ForeignOptions", ["ForeignOptions.rect.x"]],
-  ["GenericHolder", ["GenericHolder.item.tag"]],
+  ["NestedMapped", ["NestedMapped.viewport.x", "NestedMapped.picked.x"]],
+  ["GenericForeignPartial", []],
 ])(
-  "the walk reaches the options %s holds, and a member Partial's source already makes optional stays its own",
+  "in %s a member a mapped type makes optional is named where the mapped type is applied, and one its source already makes optional stays the source's",
   (name, expected) => {
     expect(
       optionalMembersRejectingUndefined(program, fixtureName, [name]),
@@ -508,19 +636,27 @@ test("the walk reaches an option type in an array, an intersection, a library's 
       "GenericOptions",
     ]),
   ).toStrictEqual([
-    "ListOptions.items.tag",
+    "Item.tag",
     "WrappedOptions.partial.passThrough",
-    "WrappedOptions.frozen.value",
-    "WrappedOptions.joined.value",
+    "Source.value",
     "WrappedOptions.joined.extra",
     "Shared.filename",
   ]);
 });
 
-test("a listed type is checked with the members it inherits from a declaration the list leaves out", () => {
+test("a member two instantiations of a generic reach is named once, under the first path", () => {
+  expect(
+    optionalMembersRejectingUndefined(program, fixtureName, [
+      "FirstUse",
+      "SecondUse",
+    ]),
+  ).toStrictEqual(["FirstUse.wrapper.box.inner"]);
+});
+
+test("a listed type is checked with the members it inherits from a declaration the list leaves out, named under that declaration", () => {
   expect(
     optionalMembersRejectingUndefined(program, fixtureName, ["SharedOptions"]),
-  ).toStrictEqual(["SharedOptions.filename"]);
+  ).toStrictEqual(["Shared.filename"]);
 });
 
 test("a listed type the file no longer declares fails the walk", () => {
