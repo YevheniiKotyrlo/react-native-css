@@ -1,4 +1,4 @@
-import { Text, View } from "react-native-css/components";
+import { View } from "react-native-css/components";
 
 import { render } from "./_tailwind";
 
@@ -37,20 +37,27 @@ test("a render after one whose CSS uses no Tailwind feature compiles its own cla
   expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-1"]);
 });
 
-test("a render whose CSS names a file source rejects", async () => {
-  await expect(
-    render(<View className="left-0" />, { extraCss: '@source "./";' }),
-  ).rejects.toThrow("names a file source");
-});
+test.each([
+  ["an @source path", { extraCss: '@source "./";' }],
+  [
+    "a source() root",
+    {
+      css: '@import "tailwindcss/utilities.css" layer(utilities) source("./");',
+    },
+  ],
+])(
+  "a render whose CSS names a file source through %s rejects",
+  async (_, options) => {
+    await expect(render(<View className="left-0" />, options)).rejects.toThrow(
+      "names a file source",
+    );
+  },
+);
 
-test("a render collects the classes of a tree with text and empty children", async () => {
-  const { stylesheet } = await render(
-    <View className="left-0">
-      <Text>label</Text>
-      {null}
-      {false}
-    </View>,
-  );
+test("a render whose CSS only excludes a path compiles its classes", async () => {
+  const { stylesheet } = await render(<View className="left-0" />, {
+    extraCss: '@source not "./";',
+  });
 
   expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-0"]);
 });
