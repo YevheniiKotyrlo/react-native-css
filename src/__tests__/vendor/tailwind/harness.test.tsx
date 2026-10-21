@@ -37,19 +37,10 @@ test("a render after one whose CSS uses no Tailwind feature compiles its own cla
   expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-1"]);
 });
 
-test("a render leaves a caller's console.error spy in place", async () => {
-  const consoleError = jest
-    .spyOn(console, "error")
-    .mockImplementation(() => undefined);
-
-  try {
-    await render(<View className="left-0" />);
-    console.error("after the render");
-
-    expect(consoleError).toHaveBeenCalledWith("after the render");
-  } finally {
-    consoleError.mockRestore();
-  }
+test("a render whose CSS names a file source rejects", async () => {
+  await expect(
+    render(<View className="left-0" />, { extraCss: '@source "./";' }),
+  ).rejects.toThrow("names a file source");
 });
 
 test("a render collects the classes of a tree with text and empty children", async () => {
