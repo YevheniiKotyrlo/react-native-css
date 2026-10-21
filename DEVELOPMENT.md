@@ -118,7 +118,7 @@ yarn example start:debug # Rebuild + start with debug logging
 ## Testing
 
 - **Runner:** Jest with experimental ESM support (`NODE_OPTIONS="--experimental-vm-modules"`)
-- **Convention:** Tests in `src/__tests__/` organized by domain (`babel/`, `compiler/`, `native/`)
+- **Convention:** Tests in `src/__tests__/` organized by domain (`babel/`, `compiler/`, `e2e/`, `native/`, `types/`, `vendor/`, `web/`)
 - **Babel tests** use `babel-plugin-tester`
 - **Compiler tests** verify JSON output structure
 - **Run specific suites:** `yarn test babel`, `yarn test compiler`
