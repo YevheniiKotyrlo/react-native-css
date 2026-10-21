@@ -2,6 +2,13 @@
 import type { InlineVariable, StyleRule } from "react-native-css/compiler";
 import { specificityCompareFn } from "react-native-css/utilities";
 
+import {
+  isNonArrayObject,
+  valueAtPath,
+  withDeepPath,
+  withoutKeysAt,
+} from "../objects";
+import { collectionTarget, targetPath } from "../react/collection-target";
 import { getInteractionHandler } from "../react/interaction";
 import type { ComponentState, Config } from "../react/useNativeCss";
 import {
@@ -12,6 +19,7 @@ import {
   hoverFamily,
   observable,
   VAR_SYMBOL,
+  weakFamily,
   type Effect,
   type VariableContextValue,
 } from "../reactivity";
@@ -188,8 +196,8 @@ export function getStyledProps(
   state: ComponentState,
   inline: Record<string, any> | undefined | null,
   adaptProps: (
-    props: Record<string, any> | undefined,
-  ) => Record<string, any> | undefined = (props) => props,
+    props: Readonly<Record<string, unknown>>,
+  ) => Readonly<Record<string, unknown>> = (props) => props,
 ) {
   let result: Record<string, any> | undefined;
 
@@ -197,29 +205,28 @@ export function getStyledProps(
 
   // Each config merges a complete props object. Preserve its full target path
   // before the next config merges unrelated inline props over that object.
-  const computedTargets: { path: string[]; value: unknown }[] = [];
+  const computedTargets: { path: readonly string[]; value: unknown }[] = [];
   const consumedSources: string[] = [];
 
-  for (const config of state.configs) {
-    result = deepMergeConfig(
-      config,
-      nativeStyleMapping(config, adaptProps(styledProps?.normal)),
-      inline,
-      true,
-    );
+  // The computed props are shared by every render, and every config is mapped before any merges, so each merge and each kept target sees every mapping
+  const normal = mapEveryConfig(state.configs, adaptProps, styledProps?.normal);
+  const important = mapEveryConfig(
+    state.configs,
+    adaptProps,
+    styledProps?.important,
+  );
 
-    if (styledProps?.important) {
-      result = deepMergeConfig(
-        config,
-        result,
-        nativeStyleMapping(config, adaptProps(styledProps.important)),
-      );
+  for (const config of state.configs) {
+    result = deepMergeConfig(config, normal, inline, true);
+
+    if (important) {
+      result = config.target
+        ? deepMergeConfig(config, result, important)
+        : mergeUnownedProps(result, important, inline);
     }
 
     if (result && config.target) {
-      const path = Array.isArray(config.target)
-        ? config.target
-        : [config.target];
+      const path = targetPath(config.target);
       let target = result;
       for (const key of path.slice(0, -1)) target = target?.[key];
       const key = path[path.length - 1];
@@ -340,7 +347,7 @@ function mergeDefinedProps(
     const value = right[key];
     if (value === undefined) continue;
     // Non-object values (strings, numbers, booleans, null, arrays): always assign
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (!isNonArrayObject(value)) {
       result[key] = value;
       continue;
     }
@@ -394,13 +401,10 @@ function deepMergeConfig(
             const leftStyle = left.style;
 
             // For arrays or objects, check if we need to create a style array
-            const leftIsObject =
-              typeof leftStyle === "object" && !Array.isArray(leftStyle);
-            const rightIsObject =
-              typeof filteredRightStyle === "object" &&
-              !Array.isArray(filteredRightStyle);
-
-            if (leftIsObject && rightIsObject) {
+            if (
+              isNonArrayObject(leftStyle) &&
+              isNonArrayObject(filteredRightStyle)
+            ) {
               if (hasNonOverlappingProperties(leftStyle, filteredRightStyle)) {
                 result.style = [leftStyle, filteredRightStyle];
               } else {
@@ -495,15 +499,7 @@ function deepMergeConfig(
         }
       } else if (left && finalKey in left) {
         const leftValue = left[finalKey];
-        const leftIsObj =
-          typeof leftValue === "object" &&
-          leftValue !== null &&
-          !Array.isArray(leftValue);
-        const rightIsObj =
-          typeof rightValue === "object" &&
-          rightValue !== null &&
-          !Array.isArray(rightValue);
-        if (leftIsObj && rightIsObj) {
+        if (isNonArrayObject(leftValue) && isNonArrayObject(rightValue)) {
           if (hasNonOverlappingProperties(leftValue, rightValue)) {
             result[finalKey] = [leftValue, rightValue];
           } else {
@@ -543,63 +539,105 @@ function deepMergeConfig(
   return result;
 }
 
-function nativeStyleMapping(
-  config: Config,
-  props: Record<string, any> | undefined,
+function mapEveryConfig(
+  configs: readonly Config[],
+  adaptProps: (
+    props: Readonly<Record<string, unknown>>,
+  ) => Readonly<Record<string, unknown>>,
+  props: Readonly<Record<string, unknown>> | undefined,
 ) {
   if (!props) {
     return props;
   }
-  if (!config.nativeStyleMapping) {
-    if (config.target === false) delete props.style;
-    return props;
-  }
 
-  let source: Record<string, any> | undefined;
+  return mappedPropsFamily(configs)(adaptProps(props));
+}
 
-  if (typeof config.target === "string") {
-    source = props[config.target];
-  } else if (config.target === false) {
-    source = props["style"];
-  } else {
-    const tokens = [...config.target];
-    const lastToken = tokens.pop()!;
+// Mapping builds new objects, so it runs once per configs and computed props, and a render that changes neither maps nothing again
+const mappedPropsFamily = weakFamily((configs: readonly Config[]) => {
+  const mappingConfigs = configs.filter(hasNativeStyleMapping);
 
-    source = props;
-    for (const token of tokens) {
-      source = source[token];
-      if (!source) {
-        return props;
-      }
-    }
+  return mappingConfigs.length === 0
+    ? (props: Readonly<Record<string, unknown>>) => props
+    : weakFamily((props: Readonly<Record<string, unknown>>) =>
+        nativeStyleMapping(mappingConfigs, props),
+      );
+});
 
-    source = source[lastToken];
-  }
+type MappingConfig = Readonly<Config> & {
+  readonly nativeStyleMapping: Readonly<
+    NonNullable<Config["nativeStyleMapping"]>
+  >;
+};
 
-  if (!source) {
-    return props;
-  }
+function hasNativeStyleMapping(
+  config: Readonly<Config>,
+): config is MappingConfig {
+  return config.nativeStyleMapping !== undefined;
+}
 
-  for (const [key, path] of Object.entries(config.nativeStyleMapping)) {
-    const styleValue = source[key];
+// Every mapping reads the props as computed, and every mapped key leaves its source before any destination is written, so no mapping reads what another wrote and the configs' order changes nothing
+function nativeStyleMapping(
+  configs: readonly MappingConfig[],
+  props: Readonly<Record<string, unknown>>,
+) {
+  const sources = configs.flatMap((config) => {
+    const sourcePath = targetPath(collectionTarget(config));
+    const source = valueAtPath(props, sourcePath);
+    return isNonArrayObject(source) ? [{ config, sourcePath, source }] : [];
+  });
 
-    delete source[key];
+  const stripped = sources.reduce(
+    (result, { config, sourcePath }) =>
+      withoutKeysAt(result, sourcePath, Object.keys(config.nativeStyleMapping)),
+    props,
+  );
 
-    if (styleValue === undefined) {
+  return sources.reduce(
+    (result, { config, source }) =>
+      Object.entries(config.nativeStyleMapping).reduce(
+        (written, [key, path]) => {
+          const value = source[key];
+          return value === undefined
+            ? written
+            : withDeepPath(written, path.split("."), value);
+        },
+        result,
+      ),
+    stripped,
+  );
+}
+
+// A config with no target owns none of the props its mapping writes, so an inline value of one stands, as for a normal declaration, and the config's normal and !important objects meet key by key
+function mergeUnownedProps(
+  merged: Readonly<Record<string, unknown>>,
+  important: Readonly<Record<string, unknown>>,
+  inline: Readonly<Record<string, unknown>> | undefined | null,
+) {
+  const result: Record<string, unknown> = { ...merged };
+
+  for (const [key, value] of Object.entries(important)) {
+    if (value === undefined || suppliesProp(inline, key)) {
       continue;
     }
-
-    let target = props;
-    const tokens = path.split(".");
-    const lastToken = tokens.pop();
-    for (const token of tokens) {
-      target[token] ??= {};
-      target = target[token];
-    }
-
-    target[lastToken!] = styleValue;
+    const current = result[key];
+    result[key] =
+      isNonArrayObject(current) && isNonArrayObject(value)
+        ? { ...current, ...value }
+        : value;
   }
 
-  if (config.target === false) delete props.style;
-  return props;
+  return result;
+}
+
+// An inline value counts as mergeDefinedProps counts it: not undefined, and no empty plain object
+function suppliesProp(
+  inline: Readonly<Record<string, unknown>> | undefined | null,
+  key: string,
+) {
+  const value = inline?.[key];
+  return (
+    value !== undefined &&
+    !(isNonArrayObject(value) && Object.keys(value).length === 0)
+  );
 }
