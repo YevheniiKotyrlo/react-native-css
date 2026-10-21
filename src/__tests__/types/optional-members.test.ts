@@ -2,23 +2,24 @@ import ts from "typescript";
 
 import { createProgram, root } from "./_program";
 
-// Every declaration of a file, or only the option types a consumer writes
+// Every declaration of a file, or only the option types a consumer writes, with the option types their members reach
 const declarations: readonly (readonly [string, readonly string[] | "all"])[] =
   [
     ["types.d.ts", "all"],
     ["src/runtime.types.ts", "all"],
-    [
-      "src/compiler/compiler.types.ts",
-      ["CompilerOptions", "InlineVariableOptions"],
-    ],
+    ["src/compiler/compiler.types.ts", ["CompilerOptions"]],
     ["src/metro/index.ts", ["WithReactNativeCSSOptions"]],
     [
       "src/jest/index.ts",
       ["RegisterCSSOptions", "CompileWithAutoDebugOptions"],
     ],
-    ["src/babel/helpers.ts", ["PluginOpts"]],
     ["src/native/react/useNativeCss.ts", ["Config"]],
   ];
+
+type TypeDeclaration =
+  | ts.InterfaceDeclaration
+  | ts.TypeAliasDeclaration
+  | ts.ClassDeclaration;
 
 // Under exactOptionalPropertyTypes a bare `?: T` rejects an explicit undefined, which React Native's own optional props accept
 function optionalMembersRejectingUndefined(
@@ -29,14 +30,60 @@ function optionalMembersRejectingUndefined(
   const checker = program.getTypeChecker();
   const source = program.getSourceFile(fileName);
   if (source === undefined) throw new Error(`${fileName} is not compiled`);
+  const undefinedType = checker.getUndefinedType();
 
-  const rejectsUndefined = (type: ts.Type): boolean =>
+  const isOwnDeclaration = (node: ts.Node): boolean =>
+    !node.getSourceFile().fileName.includes("/node_modules/");
+
+  const isOwnType = (type: ts.Type): boolean =>
+    (type.aliasSymbol ?? type.getSymbol())?.declarations?.some(
+      isOwnDeclaration,
+    ) ?? false;
+
+  const partsOf = (type: ts.Type): readonly ts.Type[] =>
+    type.isUnion() ? type.types : [type];
+
+  // An optional member reads as its type and TypeScript's missing type, which is not the undefined a written `| undefined` adds
+  const acceptsUndefined = (type: ts.Type): boolean => {
+    const written = partsOf(type).filter(
+      (part) =>
+        part === undefinedType || (part.flags & ts.TypeFlags.Undefined) === 0,
+    );
     // `?: never` marks a key that must stay absent
-    (type.flags & ts.TypeFlags.Never) === 0 &&
-    !checker.isTypeAssignableTo(checker.getUndefinedType(), type);
+    return (
+      written.length === 0 ||
+      written.some((part) => checker.isTypeAssignableTo(undefinedType, part))
+    );
+  };
 
-  const typeNodeRejectsUndefined = (node: ts.TypeNode | undefined) =>
-    node !== undefined && rejectsUndefined(checker.getTypeFromTypeNode(node));
+  const offenders: string[] = [];
+  const checkedTypes = new Set<ts.Type>();
+
+  // A resolved type's members as a consumer writes them, inherited, picked and mapped ones included, and the option types they reach
+  const checkMembers = (type: ts.Type, path: string): void => {
+    if (checkedTypes.has(type)) return;
+    checkedTypes.add(type);
+
+    for (const property of checker.getPropertiesOfType(type)) {
+      // A member another package declares, such as a React Native prop, is that package's
+      if (property.declarations?.every((node) => !isOwnDeclaration(node))) {
+        continue;
+      }
+      const propertyType = checker.getTypeOfSymbol(property);
+      const memberPath = `${path}.${property.name}`;
+      if (
+        (property.flags & ts.SymbolFlags.Optional) !== 0 &&
+        !acceptsUndefined(propertyType)
+      ) {
+        offenders.push(memberPath);
+      }
+      for (const part of partsOf(propertyType)) {
+        if ((part.flags & ts.TypeFlags.Object) !== 0 && isOwnType(part)) {
+          checkMembers(part, memberPath);
+        }
+      }
+    }
+  };
 
   // keyof T through any alias, or a type parameter declared as one
   const isKeyOfConstraint = (node: ts.TypeNode): boolean => {
@@ -54,6 +101,9 @@ function optionalMembersRejectingUndefined(
     );
   };
 
+  const typeNodeRejectsUndefined = (node: ts.TypeNode | undefined): boolean =>
+    node !== undefined && !acceptsUndefined(checker.getTypeFromTypeNode(node));
+
   // A mapped type over keyof T keeps T's optional members optional unless it says -?
   const isOptionalMappedType = (node: ts.MappedTypeNode): boolean => {
     if (node.questionToken !== undefined) {
@@ -63,9 +113,13 @@ function optionalMembersRejectingUndefined(
     return constraint !== undefined && isKeyOfConstraint(constraint);
   };
 
-  // { [K in keyof T]: T[K] } keeps each member's own type, undefined included
+  // { [K in keyof T]: T[K] } keeps each member's own type, undefined included, as long as it adds no ?
   const isTransparentMappedType = (node: ts.MappedTypeNode): boolean => {
-    if (node.type === undefined || !ts.isIndexedAccessTypeNode(node.type)) {
+    if (
+      node.questionToken !== undefined ||
+      node.type === undefined ||
+      !ts.isIndexedAccessTypeNode(node.type)
+    ) {
       return false;
     }
     const { objectType, indexType } = node.type;
@@ -106,13 +160,14 @@ function optionalMembersRejectingUndefined(
       argument.isTypeParameter() ||
       checker
         .getPropertiesOfType(argument)
-        .some((property) => rejectsUndefined(checker.getTypeOfSymbol(property)))
+        .some(
+          (property) => !acceptsUndefined(checker.getTypeOfSymbol(property)),
+        )
     );
   };
 
-  const offenders: string[] = [];
-
-  const visit = (node: ts.Node): void => {
+  // A generic declaration resolves only once instantiated, so its members are read as written
+  const visitGeneric = (node: ts.Node): void => {
     const rejects =
       ((ts.isPropertySignature(node) ||
         ts.isPropertyDeclaration(node) ||
@@ -137,30 +192,57 @@ function optionalMembersRejectingUndefined(
       offenders.push(`${line + 1}: ${node.getText(source).split("\n")[0]}`);
     }
 
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, visitGeneric);
   };
 
+  const checkDeclaration = (declaration: TypeDeclaration): void => {
+    const name = declaration.name;
+    if (name === undefined) return;
+    if ((declaration.typeParameters?.length ?? 0) > 0) {
+      visitGeneric(declaration);
+      return;
+    }
+    const symbol = checker.getSymbolAtLocation(name);
+    if (symbol === undefined) return;
+    for (const part of partsOf(checker.getDeclaredTypeOfSymbol(symbol))) {
+      checkMembers(part, name.text);
+    }
+  };
+
+  const typeDeclarations: TypeDeclaration[] = [];
+  const collect = (node: ts.Node): void => {
+    if (
+      ts.isInterfaceDeclaration(node) ||
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isClassDeclaration(node)
+    ) {
+      typeDeclarations.push(node);
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(source);
+
   if (names === "all") {
-    visit(source);
+    typeDeclarations.forEach(checkDeclaration);
   } else {
-    for (const statement of source.statements) {
-      if (
-        (ts.isInterfaceDeclaration(statement) ||
-          ts.isTypeAliasDeclaration(statement)) &&
-        names.includes(statement.name.text)
-      ) {
-        visit(statement);
+    for (const name of names) {
+      const named = typeDeclarations.filter(
+        (declaration) => declaration.name?.text === name,
+      );
+      // A renamed or moved option type would otherwise pass with nothing checked
+      if (named.length === 0) {
+        throw new Error(`${fileName} declares no ${name}`);
       }
+      named.forEach(checkDeclaration);
     }
   }
 
   return offenders;
 }
 
-test("the walk finds each form of an optional member that rejects undefined, and leaves a never member", () => {
-  const fileName = `${root}/src/__tests__/types/optional-members.fixture.ts`;
-  const program = createProgram([fileName], {
-    [fileName]: `type Maybe<T> = T | undefined;
+const fixtureName = `${root}/src/__tests__/types/optional-members.fixture.ts`;
+
+const fixture = `type Maybe<T> = T | undefined;
 interface Source {
   value?: string;
 }
@@ -193,22 +275,57 @@ type KeysOf<T> = keyof T;
 export type ViaAlias<T> = { [K in KeysOf<T>]: string };
 export type Same<T> = { [K in keyof T]: T[K] };
 export type Mutable<T> = { -readonly [K in keyof T]: T[K] };
-`,
-  });
+export type OptionalSame<T> = { [K in keyof T]?: T[K] };
+export type ReadonlyOptionalSame<T> = { +readonly [K in keyof T]+?: T[K] };
+interface LabelOptions { label?: string | undefined; plain: number }
+export type Labels = { [K in keyof LabelOptions]: string };
+export type RenamedLabels = { [K in keyof LabelOptions as \`\${K}Text\`]: string };
+interface Shared { filename?: string }
+export interface SharedOptions extends Shared { root?: string | undefined }
+export type PickedShared = Pick<Shared, "filename">;
+`;
 
-  expect(optionalMembersRejectingUndefined(program, fileName)).toStrictEqual([
-    "3: value?: string;",
-    "6: bare?: string;",
-    "9: method?(): void;",
-    "16: passThrough?: boolean;",
-    "19: { [K in keyof T]: string }",
-    "22: { [Q in K]: string }",
-    "23: Partial<{ passThrough: boolean }>",
-    "25: number?",
-    "28: Partial<Base>",
-    "29: Partial<T>",
-    "31: { [K in KeysOf<T>]: string }",
-  ]);
+test("the walk finds each form of an optional member that rejects undefined, and leaves a never member", () => {
+  const program = createProgram([fixtureName], { [fixtureName]: fixture });
+
+  expect(optionalMembersRejectingUndefined(program, fixtureName)).toStrictEqual(
+    [
+      "Source.value",
+      "Props.bare",
+      "Props.method",
+      "Options.passThrough",
+      "19: { [K in keyof T]: string }",
+      "22: { [Q in K]: string }",
+      "Partly.passThrough",
+      "Pair.1",
+      "ExtendsPartial.passThrough",
+      "29: Partial<T>",
+      "31: { [K in KeysOf<T>]: string }",
+      "34: { [K in keyof T]?: T[K] }",
+      "35: { +readonly [K in keyof T]+?: T[K] }",
+      "Labels.label",
+      "RenamedLabels.labelText",
+      "Shared.filename",
+      "SharedOptions.filename",
+      "PickedShared.filename",
+    ],
+  );
+});
+
+test("a listed type is checked with the members it inherits from a declaration the list leaves out", () => {
+  const program = createProgram([fixtureName], { [fixtureName]: fixture });
+
+  expect(
+    optionalMembersRejectingUndefined(program, fixtureName, ["SharedOptions"]),
+  ).toStrictEqual(["SharedOptions.filename"]);
+});
+
+test("a listed type the file no longer declares fails the walk", () => {
+  const program = createProgram([fixtureName], { [fixtureName]: fixture });
+
+  expect(() =>
+    optionalMembersRejectingUndefined(program, fixtureName, ["Missing"]),
+  ).toThrow("declares no Missing");
 });
 
 test("every optional member a consumer writes accepts an explicit undefined, or is never and must stay absent", () => {

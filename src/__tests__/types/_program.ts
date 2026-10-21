@@ -27,6 +27,7 @@ export function createProgram(
 
   return ts.createProgram(rootNames, options, {
     ...host,
+    getCurrentDirectory: () => root,
     fileExists: (name) => name in virtualFiles || host.fileExists(name),
     readFile: (name) => virtualFiles[name] ?? host.readFile(name),
     getSourceFile: (name, languageVersion, ...rest) => {
@@ -58,7 +59,8 @@ export function createLanguageService(
       getDefaultLibFileName: ts.getDefaultLibFilePath,
       fileExists: (name) => name in virtualFiles || ts.sys.fileExists(name),
       readFile: (name) => virtualFiles[name] ?? ts.sys.readFile(name),
-      readDirectory: (...args) => ts.sys.readDirectory(...args),
+      readDirectory: (path, extensions, excludes, includes, depth) =>
+        ts.sys.readDirectory(path, extensions, excludes, includes, depth),
       directoryExists: (name) => ts.sys.directoryExists(name),
       getDirectories: (name) => ts.sys.getDirectories(name),
     },
