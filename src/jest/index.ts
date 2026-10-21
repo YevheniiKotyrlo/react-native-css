@@ -32,10 +32,6 @@ const debugDefault = Boolean(
 );
 
 type RegisterCSSOptions = Omit<CompilerOptions, "logger"> & {
-  readonly debug?: boolean | undefined;
-};
-
-type CompileWithAutoDebugOptions = Omit<CompilerOptions, "logger"> & {
   readonly debug?: boolean | "verbose" | undefined;
 };
 
@@ -62,7 +58,7 @@ export function registerCSS(css: string, options: RegisterCSSOptions = {}) {
 
 export function compileWithAutoDebug(
   css: string,
-  { debug = debugDefault, ...options }: CompileWithAutoDebugOptions = {},
+  { debug = debugDefault, ...options }: RegisterCSSOptions = {},
 ) {
   const logger = debug
     ? (text: string) => {

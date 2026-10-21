@@ -244,7 +244,9 @@ export type SpecificityValue = number | undefined;
 /******************************    Compiler    ********************************/
 
 type FeatureFlags = never;
-export type FeatureFlagRecord = Partial<Record<FeatureFlags, boolean>>;
+export type FeatureFlagRecord = Partial<
+  Record<FeatureFlags, boolean | undefined>
+>;
 
 /** @internal */
 export type PathTokens = string | string[];

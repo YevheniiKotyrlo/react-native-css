@@ -36,12 +36,10 @@ Native runtime consumes via StyleCollection
 ### Babel Plugin
 
 The Babel plugin (`src/babel/react-native.ts`) rewrites React Native imports:
-
 ```
 import { View } from 'react-native'
     → import { View } from 'react-native-css/components'
 ```
-
 This enables `className` prop support on all React Native components.
 
 ### Key Architectural Patterns
@@ -53,16 +51,16 @@ This enables `className` prop support on all React Native components.
 
 ## Package Entry Points
 
-| Import                        | Purpose                                          |
-| ----------------------------- | ------------------------------------------------ |
-| `react-native-css`            | Runtime API                                      |
-| `react-native-css/compiler`   | CSS-to-JSON compiler                             |
-| `react-native-css/babel`      | Babel plugin for import transformation           |
-| `react-native-css/metro`      | `withReactNativeCSS()` Metro config              |
+| Import | Purpose |
+|--------|---------|
+| `react-native-css` | Runtime API |
+| `react-native-css/compiler` | CSS-to-JSON compiler |
+| `react-native-css/babel` | Babel plugin for import transformation |
+| `react-native-css/metro` | `withReactNativeCSS()` Metro config |
 | `react-native-css/components` | Pre-wrapped RN components with className support |
-| `react-native-css/jest`       | Jest test utilities                              |
-| `react-native-css/native`     | Native runtime API                               |
-| `react-native-css/web`        | Web runtime API                                  |
+| `react-native-css/jest` | Jest test utilities |
+| `react-native-css/native` | Native runtime API |
+| `react-native-css/web` | Web runtime API |
 
 ## Key Directories
 
@@ -120,7 +118,7 @@ yarn example start:debug # Rebuild + start with debug logging
 ## Testing
 
 - **Runner:** Jest with experimental ESM support (`NODE_OPTIONS="--experimental-vm-modules"`)
-- **Convention:** Tests in `src/__tests__/` organized by domain (`babel/`, `compiler/`, `native/`, `types/`)
+- **Convention:** Tests in `src/__tests__/` organized by domain (`babel/`, `compiler/`, `e2e/`, `native/`, `types/`, `vendor/`, `web/`)
 - **Babel tests** use `babel-plugin-tester`
 - **Compiler tests** verify JSON output structure
 - **Run specific suites:** `yarn test babel`, `yarn test compiler`
