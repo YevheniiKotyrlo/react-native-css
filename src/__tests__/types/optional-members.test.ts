@@ -347,6 +347,7 @@ export interface WrappedOptions {
   joined?: (Source & { extra?: number }) | undefined;
 }
 export interface GenericOptions<T> extends Shared { value?: T | undefined }
+export interface TupleOptions { pair?: [string, number?] | undefined }
 export interface ForeignOptions {
   rect?: Partial<import("optional-members-fixture").Rect> | undefined;
   props?: import("optional-members-fixture").ForeignProps | undefined;
@@ -388,6 +389,7 @@ test("the walk finds each form of an optional member that rejects undefined, and
       "WrappedOptions.partial.passThrough",
       "WrappedOptions.frozen.value",
       "WrappedOptions.joined.extra",
+      "TupleOptions.pair.1",
       "ForeignOptions.rect.x",
     ],
   );
