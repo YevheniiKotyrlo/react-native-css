@@ -9,12 +9,18 @@ import { Appearance } from "react-native";
 import type {
   ColorScheme,
   Props,
+  ReducedMotion,
   StyledConfiguration,
   StyledOptions,
 } from "react-native-css";
 
-import type { ReactComponent, Styled } from "../runtime.types";
+import type {
+  ReactComponent,
+  ReducedMotionPreference,
+  Styled,
+} from "../runtime.types";
 import { assignStyle } from "./assign-style";
+import { browserPreference } from "./browser-preference";
 
 const defaultMapping: StyledConfiguration<ComponentType<{ style: unknown }>> = {
   className: "style",
@@ -71,6 +77,32 @@ export const colorScheme: ColorScheme = {
     Appearance.setColorScheme(name ?? "unspecified");
   },
 };
+
+// A MediaQueryList keeps its matches current, so each matchMedia parses the query once
+const reduceMotionQueries = new WeakMap<
+  typeof window.matchMedia,
+  MediaQueryList
+>();
+
+export const reducedMotion: ReducedMotion =
+  browserPreference<ReducedMotionPreference>(() => {
+    // Server rendering has no window, and React Native's jest environment a window without matchMedia
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return undefined;
+    }
+
+    const matchMedia = window.matchMedia;
+    let query = reduceMotionQueries.get(matchMedia);
+    if (query === undefined) {
+      query = matchMedia.call(window, "(prefers-reduced-motion: reduce)");
+      reduceMotionQueries.set(matchMedia, query);
+    }
+
+    return query.matches ? "reduce" : "no-preference";
+  });
 
 /**
  * @deprecated Use `<VariableContextProvider />` instead.
