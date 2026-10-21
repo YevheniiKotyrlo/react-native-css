@@ -7,11 +7,15 @@ allowed-tools: Read, Grep, Glob, Edit, Write
 
 ## Context
 
-react-native-css has three test domains in `src/__tests__/`:
+react-native-css has these test domains in `src/__tests__/`:
 
 - `babel/` — Babel plugin tests using `babel-plugin-tester`
 - `compiler/` — CSS compilation tests verifying JSON output
+- `e2e/` — Maestro flows for the example app
 - `native/` — Runtime tests for style application
+- `types/` — Type tests that build a TypeScript program over the package's declarations
+- `vendor/` — Tests of third-party CSS, such as Tailwind's output
+- `web/` — Runtime tests for the web
 
 ## Conventions by domain
 
