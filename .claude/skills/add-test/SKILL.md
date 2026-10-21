@@ -45,18 +45,30 @@ Verify CSS → JSON compilation output structure.
 
 Test runtime style application on native platform.
 
+### Web tests (`src/__tests__/web/`)
+
+Test the web runtime, such as `useCssElement` and `assignStyle`.
+
+### Vendor tests (`src/__tests__/vendor/`)
+
+Compile a third party's CSS, such as Tailwind's through `vendor/tailwind/_tailwind.tsx`'s `render`, and assert the styles it produces.
+
+### End-to-end flows (`src/__tests__/e2e/`)
+
+Maestro flows that drive the example app on a device.
+
 ### Type tests (`src/__tests__/types/`)
 
-A case `tsc` alone decides goes in `src/__tests__/native/_styled-types.tsx`, which jest skips for its `_` prefix and `yarn typecheck` checks, with `@ts-expect-error` above a call the types must reject. A case that needs the compiler API, such as an editor's completions or a walk over the declarations, builds a TypeScript program in `src/__tests__/types/`.
+A case `tsc` alone decides goes in `src/__tests__/native/_styled-types.tsx` or `src/__fixtures__/types/component-mapping.tsx`, which jest skips and `yarn typecheck` checks, with `@ts-expect-error` above a call the types must reject. A case that needs the compiler API, such as an editor's completions or a walk over the declarations, builds a TypeScript program in `src/__tests__/types/`.
 
 ## Steps
 
 1. **Identify the feature**: What needs testing? Use `$ARGUMENTS` as the starting point.
 
-2. **Determine the domain**: Is this a babel transform, compiler output, runtime behavior, or a type?
+2. **Determine the domain**: Is this a babel transform, compiler output, native or web runtime behavior, a third party's CSS, a flow on a device, or a type?
 
 3. **Find existing tests**: Search the appropriate `src/__tests__/` subdirectory for similar tests.
 
 4. **Write the test**: Follow the conventions of the domain.
 
-5. **Run the test**: Execute `yarn test`. Note: ignore `ExperimentalWarning: VM Modules` warnings — they're expected.
+5. **Run the test**: Execute `yarn test`, and `yarn typecheck` for a case `tsc` alone decides. Note: ignore `ExperimentalWarning: VM Modules` warnings — they're expected.
