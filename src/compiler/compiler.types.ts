@@ -15,7 +15,7 @@ export interface CompilerOptions {
   selectorPrefix?: string | undefined;
   stylesheetOrder?: number | undefined;
   features?: FeatureFlagRecord | undefined;
-  logger?: ((message: string) => void | Debugger) | undefined;
+  logger?: ((message: string) => void) | Debugger | undefined;
   hexColors?: boolean | undefined;
   colorPrecision?: number | undefined;
 }
