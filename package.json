@@ -246,6 +246,7 @@
     "@react-native/jest-preset": "0.86.3",
     "@react-native/metro-config": "0.86.3",
     "@release-it/conventional-changelog": "10.0.1",
+    "@tailwindcss/node": "^4.1.12",
     "@tailwindcss/postcss": "^4.1.12",
     "@testing-library/react-native": "^13.3.3",
     "@tsconfig/react-native": "^3.0.6",
