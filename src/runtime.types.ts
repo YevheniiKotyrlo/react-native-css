@@ -35,7 +35,7 @@ export type StyledReactElement<
   M extends StyledConfiguration<C>,
 > = ReactElement<ComponentProps<C> & StyledSourceProps<M>>;
 
-export type StyledProps<P, M extends StyledConfiguration<any>> = P &
+export type StyledProps<P, M extends StyledConfiguration<ReactComponent>> = P &
   StyledSourceProps<M>;
 
 export interface Styled {
@@ -84,7 +84,7 @@ interface StyledConfigurationObject<
 
 // A -rn- declaration puts its camel-cased name in the style, so a key may be any string beside React Native's style keys
 type NativeStyleMapping<S> = Readonly<
-  Partial<Record<keyof RNStyle | "fill" | "stroke", NativeStyleMappingValue<S>>>
+  Partial<Record<keyof RNStyle, NativeStyleMappingValue<S>>>
 > &
   Readonly<Record<string, NativeStyleMappingValue<S>>>;
 
