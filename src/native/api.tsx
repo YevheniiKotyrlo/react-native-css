@@ -4,6 +4,7 @@ import { Appearance, type ViewStyle } from "react-native";
 
 import type { StyleDescriptor } from "react-native-css/compiler";
 import { VariableContext } from "react-native-css/native-internal";
+import { resolveColorScheme } from "react-native-css/utilities";
 
 import type {
   ColorScheme,
@@ -69,10 +70,15 @@ export const styled: Styled = (
 
 export const colorScheme: ColorScheme = {
   get() {
-    return colorSchemeObs.get() ?? Appearance.getColorScheme() ?? "light";
+    return resolveColorScheme(colorSchemeObs.get());
   },
   set(value) {
-    return colorSchemeObs.set(value === "unspecified" ? null : value);
+    // Appearance answers null only without its native module, where nothing but this library holds a scheme
+    if (Appearance.getColorScheme() === null) {
+      colorSchemeObs.set(value);
+    } else {
+      Appearance.setColorScheme(value ?? "unspecified");
+    }
   },
 };
 

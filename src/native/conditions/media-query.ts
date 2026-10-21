@@ -2,6 +2,7 @@
 import { I18nManager, PixelRatio, Platform } from "react-native";
 
 import type { MediaCondition } from "react-native-css/compiler";
+import { resolveColorScheme } from "react-native-css/utilities";
 
 import { colorScheme, vh, vw, type Getter } from "../reactivity";
 
@@ -45,7 +46,7 @@ function testComparison(mediaQuery: MediaCondition, get: Getter): Boolean {
     case "platform":
       return value === "native" || value === Platform.OS;
     case "prefers-color-scheme": {
-      return value === get(colorScheme);
+      return value === resolveColorScheme(get(colorScheme));
     }
     case "display-mode":
       return value === "native" || Platform.OS === value;
