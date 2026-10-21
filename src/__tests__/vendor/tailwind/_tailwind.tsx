@@ -90,7 +90,10 @@ export async function render(
   );
 }
 
-// @tailwindcss/postcss keeps one compiler per from and base, reusing it for other CSS until a file it read changes, and only logs a failed compile, so each render compiles with the compiler it wraps: https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts
+// @tailwindcss/postcss keeps one compiler per from and base and reuses it for other CSS until a file it read changes, and only logs a failed compile, so each render compiles with the compiler it wraps
+// https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L32-L33
+// https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L182-L196
+// https://github.com/tailwindlabs/tailwindcss/blob/v4.1.13/packages/@tailwindcss-postcss/src/index.ts#L334-L352
 async function compileTailwind(css: string): Promise<string> {
   const compiler = await compileTailwindCss(css, {
     base: __dirname,

@@ -29,12 +29,19 @@ test("a render whose CSS fails to compile rejects", async () => {
 });
 
 test("a render after one whose CSS uses no Tailwind feature compiles its own classes", async () => {
-  await render(<View className="left-0" />, {
-    css: "@theme { --color-brand: red; }",
-  });
-  const { stylesheet } = await render(<View className="left-1" />);
+  // A millisecond no other case reads, so only this case's renders could share a compiler
+  const now = jest.spyOn(Date, "now").mockReturnValue(1);
 
-  expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-1"]);
+  try {
+    await render(<View className="left-0" />, {
+      css: "@theme { --color-brand: red; }",
+    });
+    const { stylesheet } = await render(<View className="left-1" />);
+
+    expect(stylesheet().s?.map(([name]) => name)).toStrictEqual(["left-1"]);
+  } finally {
+    now.mockRestore();
+  }
 });
 
 test.each([
@@ -47,7 +54,7 @@ test.each([
   ],
 ])(
   "a render whose CSS names a file source through %s rejects",
-  async (_, options) => {
+  async (_sourceKind, options) => {
     await expect(render(<View className="left-0" />, options)).rejects.toThrow(
       "names a file source",
     );
