@@ -848,6 +848,67 @@ describe("every spelling of a style target combines its class, inline and !impor
       });
     },
   );
+  test.each(SPELLINGS)(
+    "%s: combining writes to none of the values it reads",
+    (_spelling, mapping, prop) => {
+      const inline = { height: 16, transform: [{ rotate: "45deg" }] };
+      const layered = [
+        { height: 16 },
+        { [VAR_SYMBOL]: "inline", brand: "red" },
+      ];
+
+      for (const className of ["padded", "padded bg-imp", "padded themed"]) {
+        received(mapping, prop, className, inline);
+        received(mapping, prop, className, layered);
+      }
+
+      expect(inline).toStrictEqual({
+        height: 16,
+        transform: [{ rotate: "45deg" }],
+      });
+      expect(layered).toStrictEqual([
+        { height: 16 },
+        { [VAR_SYMBOL]: "inline", brand: "red" },
+      ]);
+    },
+  );
+
+  test.each(SPELLINGS)(
+    "%s: an element receives the same props on every render, whatever renders between",
+    (_spelling, mapping, prop) => {
+      registerCSS(`
+        .padded { padding: 4px; }
+        .bg-imp { background-color: red !important; }
+      `);
+      const props: Readonly<Record<string, unknown>>[] = [];
+      const Probe = (probeProps: Readonly<Record<string, unknown>>) => {
+        props.push(probeProps);
+        return null;
+      };
+      const Styled = (styledProps: Readonly<Record<string, unknown>>) =>
+        useCssElement(Probe, styledProps, mapping);
+      for (const inline of [undefined, { height: 16 }]) {
+        const element = () => (
+          <Styled
+            className="padded bg-imp"
+            {...(inline === undefined ? {} : { [prop]: inline })}
+          />
+        );
+
+        const { rerender } = render(element());
+        const first = props.at(-1)?.[prop];
+        rerender(element());
+        const again = props.at(-1)?.[prop];
+        render(<Styled className="padded" {...{ [prop]: { width: 8 } }} />);
+        const between = props.at(-1)?.[prop];
+        rerender(element());
+
+        expect(again).toStrictEqual(first);
+        expect(between).toStrictEqual([{ padding: 4 }, { width: 8 }]);
+        expect(props.at(-1)?.[prop]).toStrictEqual(first);
+      }
+    },
+  );
 });
 
 describe("an inline value the CSS variable filter finds nothing in reaches the component as it came", () => {
