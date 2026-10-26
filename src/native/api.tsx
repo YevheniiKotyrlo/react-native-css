@@ -18,6 +18,7 @@ import { usePassthrough } from "./react/usePassthrough";
 import {
   cleanupEffect,
   colorScheme as colorSchemeObs,
+  resolveColorScheme,
   VAR_SYMBOL,
   type Effect,
   type Getter,
@@ -69,10 +70,14 @@ export const styled: Styled = (
 
 export const colorScheme: ColorScheme = {
   get() {
-    return colorSchemeObs.get() ?? Appearance.getColorScheme() ?? "light";
+    return resolveColorScheme(colorSchemeObs.get());
   },
   set(value) {
-    return colorSchemeObs.set(value === "unspecified" ? null : value);
+    Appearance.setColorScheme(value ?? "unspecified");
+    // Appearance holds no scheme after a request only without its native module, and then nothing but this library holds one
+    if (Appearance.getColorScheme() == null) {
+      colorSchemeObs.set(value);
+    }
   },
 };
 
