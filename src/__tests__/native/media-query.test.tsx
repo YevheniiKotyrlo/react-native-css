@@ -408,14 +408,34 @@ test("reducedMotion.set overrides the device's preference, and set(null) follows
   expect(component.props.style).toStrictEqual({ color: "#000" });
 });
 
-// Chromium 153, Firefox 155 and WebKit 26.6 agree on every row: [query, reduce/light, reduce/dark, no-preference/light, no-preference/dark]
+// Chromium 156, Firefox 157 and WebKit 27.2 agree on every row: [query, reduce/light, reduce/dark, no-preference/light, no-preference/dark]
 const BROWSER_MEDIA_ROWS = [
   ["(prefers-reduced-motion: reduce)", true, true, false, false],
   ["(prefers-reduced-motion: no-preference)", false, false, true, true],
   ["(prefers-reduced-motion)", true, true, false, false],
   ["not (prefers-reduced-motion)", false, false, true, true],
-  ["(prefers-reduced-motion: bogus)", false, false, false, false],
+  ["not (prefers-reduced-motion: reduce)", false, false, true, true],
+  ["not (prefers-reduced-motion: no-preference)", true, true, false, false],
   ["not all and (prefers-reduced-motion: reduce)", false, false, true, true],
+  ["(prefers-reduced-motion: bogus)", false, false, false, false],
+  ["(prefers-reduced-motion: initial)", false, false, false, false],
+  ["(PREFERS-REDUCED-MOTION: reduce)", true, true, false, false],
+  ["( prefers-reduced-motion : reduce )", true, true, false, false],
+  ["(prefers-reduced-motion:/* a comment */reduce)", true, true, false, false],
+  ["((prefers-reduced-motion: reduce))", true, true, false, false],
+  ["screen and (prefers-reduced-motion: reduce)", true, true, false, false],
+  [
+    "only screen and (prefers-reduced-motion: reduce)",
+    true,
+    true,
+    false,
+    false,
+  ],
+  ["all and (prefers-reduced-motion: reduce)", true, true, false, false],
+  ["print and (prefers-reduced-motion: reduce)", false, false, false, false],
+  ["not screen and (prefers-reduced-motion: reduce)", false, false, true, true],
+  ["not print and (prefers-reduced-motion: reduce)", true, true, true, true],
+  ["(prefers-reduced-motion: reduce), print", true, true, false, false],
   [
     "(prefers-reduced-motion: reduce) and (min-width: 1px)",
     true,
@@ -437,7 +457,48 @@ const BROWSER_MEDIA_ROWS = [
     false,
     true,
   ],
-  ["not (prefers-reduced-motion: reduce)", false, false, true, true],
+  [
+    "(prefers-reduced-motion: reduce) or (prefers-color-scheme: dark)",
+    true,
+    true,
+    false,
+    true,
+  ],
+  [
+    "not ((prefers-reduced-motion: reduce) and (prefers-color-scheme: dark))",
+    true,
+    false,
+    true,
+    true,
+  ],
+  [
+    "(prefers-reduced-motion: reduce) and (not (prefers-color-scheme: dark))",
+    true,
+    false,
+    false,
+    false,
+  ],
+  [
+    "(prefers-reduced-motion: no-preference) and (prefers-reduced-motion: reduce)",
+    false,
+    false,
+    false,
+    false,
+  ],
+  [
+    "(prefers-reduced-motion: reduce) and (unknown-feature)",
+    false,
+    false,
+    false,
+    false,
+  ],
+  [
+    "(prefers-reduced-motion: reduce) or (unknown-feature)",
+    true,
+    true,
+    false,
+    false,
+  ],
   ["(prefers-color-scheme: dark)", false, true, false, true],
   ["(unknown-feature)", false, false, false, false],
 ] as const;
