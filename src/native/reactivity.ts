@@ -249,7 +249,7 @@ export function devicePreference<Value>() {
 
 /** Reduced Motion ************************************************************/
 
-// AccessibilityInfo answers asynchronously; until it does the device's preference is unknown, so a query on it does not match and a negated one does
+// React Native reads the setting only through a callback, so the device's preference is unknown until AccessibilityInfo answers
 export const { device: deviceReducedMotion, preference: reducedMotion } =
   devicePreference<ReducedMotionPreference>();
 
